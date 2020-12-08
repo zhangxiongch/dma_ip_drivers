@@ -136,7 +136,7 @@ static long xvc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 	total_bits = xvc_obj.length;
 	total_bytes = (total_bits + 7) >> 3;
 
-	buffer = (unsigned char *)kmalloc(total_bytes * 3, GFP_KERNEL);
+	buffer = kmalloc(total_bytes * 3, GFP_KERNEL);
 	if (!buffer) {
 		pr_info("OOM %u, op 0x%x, len %u bits, %u bytes.\n",
 			3 * total_bytes, opcode, total_bits, total_bytes);
@@ -213,7 +213,7 @@ static long xvc_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 		pr_info("copy back tdo_buf failed: %d/%u.\n", rv, total_bytes);
 
 unlock:
-#if KERNEL_VERSION(5, 1, 0) >= LINUX_VERSION_CODE
+#if HAS_MMIOWB
 	mmiowb();
 #endif
 	spin_unlock(&xcdev->lock);
