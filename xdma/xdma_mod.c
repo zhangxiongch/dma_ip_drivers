@@ -30,13 +30,13 @@
 #include "xdma_cdev.h"
 #include "version.h"
 
-#define DRV_MODULE_NAME		"xdma"
-#define DRV_MODULE_DESC		"Xilinx XDMA Reference Driver"
+#define DRV_MODULE_NAME		"sr2000"
+#define DRV_MODULE_DESC		"Shrong sr2000 Driver"
 
 static char version[] =
 	DRV_MODULE_DESC " " DRV_MODULE_NAME " v" DRV_MODULE_VERSION "\n";
 
-MODULE_AUTHOR("Xilinx, Inc.");
+MODULE_AUTHOR("Shrong, Inc.");
 MODULE_DESCRIPTION(DRV_MODULE_DESC);
 MODULE_VERSION(DRV_MODULE_VERSION);
 MODULE_LICENSE("Dual BSD/GPL");
@@ -46,7 +46,7 @@ static int xpdev_cnt;
 
 static const struct pci_device_id pci_ids[] = {
 	// modified by zx
-	{ PCI_DEVICE(0x878d, 0x1000), },
+	{ PCI_DEVICE(0x878d, 0x2000), },
 
 	{0,}
 };

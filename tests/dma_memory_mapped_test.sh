@@ -1,12 +1,4 @@
 #!/bin/bash
-###
- # @Author: ZhangXiong
- # @Date: 2021-08-11 16:28:55
- # @LastEditTime: 2021-08-11 16:28:52
- # @LastEditors: ZhangXiong
- # @Description:
- # Copyright (c) 2019 - 2021 shrong Ltd. All rights reserved
-###
 
 transferSize=$1
 transferCount=$2

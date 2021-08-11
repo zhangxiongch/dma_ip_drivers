@@ -1,12 +1,4 @@
 /*
- * @Author: ZhangXiong
- * @Date: 2021-02-20 20:36:58
- * @LastEditTime: 2021-07-28 17:54:14
- * @LastEditors: ZhangXiong
- * @Description:
- * Copyright (c) 2019 - 2021 shrong Ltd. All rights reserved
- */
-/*
  * This file is part of the Xilinx DMA IP Core driver for Linux
  *
  * Copyright (c) 2016-present,  Xilinx, Inc.
@@ -29,8 +21,8 @@
 #define __XDMA_VERSION_H__
 
 #define DRV_MOD_MAJOR		2021
-#define DRV_MOD_MINOR		7
-#define DRV_MOD_PATCHLEVEL	28
+#define DRV_MOD_MINOR		8
+#define DRV_MOD_PATCHLEVEL	11
 
 #define DRV_MODULE_VERSION      \
 	__stringify(DRV_MOD_MAJOR) "." \

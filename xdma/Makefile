@@ -11,7 +11,7 @@ $(warning XVC_FLAGS: $(XVC_FLAGS).)
 
 topdir := $(shell cd $(src)/.. && pwd)
 
-TARGET_MODULE:=xdma
+TARGET_MODULE:=sr2000
 
 EXTRA_CFLAGS := -I$(topdir)/include $(XVC_FLAGS)
 #EXTRA_CFLAGS += -D__LIBXDMA_DEBUG__
