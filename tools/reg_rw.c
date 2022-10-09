@@ -100,15 +100,15 @@ int main(int argc, char **argv)
 	fflush(stdout);
 
 	/*modified by zx*/
-	if(strcmp("/dev/xdma0_user",device) == 0)
+	if(strcmp("/dev/sr2000_0_user",device) == 0)
 	{
 		mapSize = AXI_BAR_MAP_SIZE;
 	}
-	else if(strcmp("/dev/xdma0_control",device) == 0)
+	else if(strcmp("/dev/sr2000_0_control",device) == 0)
 	{
 		mapSize = XDMA_BAR_MAP_SIZE;
 	}
-	else if(strcmp("/dev/xdma0_bypass",device) == 0)
+	else if(strcmp("/dev/sr2000_0_bypass",device) == 0)
 	{
 		mapSize = BYPASS_BAR_MAP_SIZE;
 	}

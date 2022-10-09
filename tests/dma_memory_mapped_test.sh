@@ -18,10 +18,10 @@ if [ $h2cChannels -gt 0 ]; then
   # Loop over four blocks of size $transferSize and write to them (in parallel where possible)
   for ((i=0; i<=3; i++))
   do
-    addrOffset=$(($transferSize * $i))
+    addrOffset=$(($transferSize * $i | 0x60000000))
     curChannel=$(($i % $h2cChannels))
     echo "Info: Writing to h2c channel $curChannel at address offset $addrOffset."
-    $tool_path/dma_to_device -d /dev/xdma0_h2c_${curChannel} -f data/datafile${i}_4K.bin -s $transferSize -a $addrOffset -c $transferCount &
+    $tool_path/dma_to_device -d /dev/sr2000_0_h2c_${curChannel} -f data/datafile${i}_4K.bin -s $transferSize -a $addrOffset -c $transferCount &
     # If all channels have active transactions we must wait for them to complete
     if [ $(($curChannel+1)) -eq $h2cChannels ]; then
       echo "Info: Wait for current transactions to complete."
@@ -38,11 +38,11 @@ if [ $c2hChannels -gt 0 ]; then
   # Loop over four blocks of size $transferSize and read from them (in parallel where possible)
   for ((i=0; i<=3; i++))
   do
-    addrOffset=$(($transferSize * $i))
+    addrOffset=$(($transferSize * $i | 0x60000000))
     curChannel=$(($i % $c2hChannels))
     rm -f data/output_datafile${i}_4K.bin
     echo "Info: Reading from c2h channel $curChannel at address offset $addrOffset."
-    $tool_path/dma_from_device -d /dev/xdma0_c2h_${curChannel} -f data/output_datafile${i}_4K.bin -s $transferSize -a $addrOffset -c $transferCount &
+    $tool_path/dma_from_device -d /dev/sr2000_0_c2h_${curChannel} -f data/output_datafile${i}_4K.bin -s $transferSize -a $addrOffset -c $transferCount &
     # If all channels have active transactions we must wait for them to complete
     if [ $(($curChannel+1)) -eq $c2hChannels ]; then
       echo "Info: Wait for the current transactions to complete."

@@ -28,7 +28,7 @@
 
 #include "dma_utils.c"
 
-#define DEVICE_NAME_DEFAULT "/dev/xdma0_c2h_0"
+#define DEVICE_NAME_DEFAULT "/dev/sr2000_0_c2h_0"
 #define SIZE_DEFAULT (32)
 #define COUNT_DEFAULT (1)
 
@@ -46,7 +46,7 @@ static struct option const long_opts[] = {
 	{0, 0, 0, 0}
 };
 
-static int test_dma(char *devname, uint64_t addr, uint64_t aperture, 
+static int test_dma(char *devname, uint64_t addr, uint64_t aperture,
 		uint64_t size, uint64_t offset, uint64_t count,
 		char *ofname);
 static int eop_flush = 0;
@@ -289,7 +289,7 @@ static int test_dma(char *devname, uint64_t addr, uint64_t aperture,
 	} else if (eop_flush) {
 		/* allow underflow with -e option */
 		rc = 0;
-	} else 
+	} else
 		rc = -EIO;
 
 out:

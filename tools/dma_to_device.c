@@ -43,7 +43,7 @@ static struct option const long_opts[] = {
 	{0, 0, 0, 0}
 };
 
-#define DEVICE_NAME_DEFAULT "/dev/xdma0_h2c_0"
+#define DEVICE_NAME_DEFAULT "/dev/sr2000_0_h2c_0"
 #define SIZE_DEFAULT (32)
 #define COUNT_DEFAULT (1)
 
@@ -58,7 +58,7 @@ static void usage(const char *name)
 
 	fprintf(stdout, "%s\n\n", name);
 	fprintf(stdout, "usage: %s [OPTIONS]\n\n", name);
-	fprintf(stdout, 
+	fprintf(stdout,
 		"Write via SGDMA, optionally read input from a file.\n\n");
 
 	fprintf(stdout, "  -%c (--%s) device (defaults to %s)\n",
@@ -162,7 +162,7 @@ int main(int argc, char *argv[])
 	}
 
 	if (verbose)
-		fprintf(stdout, 
+		fprintf(stdout,
 		"dev %s, addr 0x%lx, aperture 0x%lx, size 0x%lx, offset 0x%lx, "
 	        "count %lu\n",
 		device, address, aperture, size, offset, count);
@@ -231,7 +231,7 @@ static int test_dma(char *devname, uint64_t addr, uint64_t aperture,
 	buffer = allocated + offset;
 	if (verbose)
 		fprintf(stdout, "host buffer 0x%lx = %p\n",
-			size + 4096, buffer); 
+			size + 4096, buffer);
 
 	if (infile_fd >= 0) {
 		rc = read_to_buffer(infname, infile_fd, buffer, size, 0);
@@ -280,8 +280,8 @@ static int test_dma(char *devname, uint64_t addr, uint64_t aperture,
 		if (verbose)
 		fprintf(stdout,
 			"#%lu: CLOCK_MONOTONIC %ld.%09ld sec. write %ld bytes\n",
-			i, ts_end.tv_sec, ts_end.tv_nsec, size); 
-			
+			i, ts_end.tv_sec, ts_end.tv_nsec, size);
+
 		if (outfile_fd >= 0) {
 			rc = write_from_buffer(ofname, outfile_fd, buffer,
 						 bytes_done, out_offset);
