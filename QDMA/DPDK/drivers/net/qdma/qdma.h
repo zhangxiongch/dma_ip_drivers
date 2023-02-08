@@ -1,7 +1,8 @@
 /*-
  * BSD LICENSE
  *
- * Copyright(c) 2017-2020 Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2017-2022 Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Advanced Micro Devices, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -36,7 +37,6 @@
 #include <stdbool.h>
 #include <rte_dev.h>
 #include <rte_ethdev.h>
-#include <rte_ethdev_driver.h>
 #include <rte_spinlock.h>
 #include <rte_log.h>
 #include <rte_cycles.h>
@@ -44,13 +44,11 @@
 #include <rte_memzone.h>
 #include <linux/pci.h>
 #include "qdma_user.h"
-#include "qdma_soft_reg.h"
-#include "eqdma_soft_reg.h"
-#include "qdma_s80_hard_reg.h"
 #include "qdma_resource_mgmt.h"
 #include "qdma_mbox.h"
 #include "rte_pmd_qdma.h"
 #include "qdma_log.h"
+#include "qdma_dpdk_compat.h"
 
 #define QDMA_NUM_BARS          (6)
 #define DEFAULT_PF_CONFIG_BAR  (0)
@@ -83,6 +81,8 @@
 #define WB_TIMEOUT			(100000)
 #define RESET_TIMEOUT		(60000)
 #define SHUTDOWN_TIMEOUT	(60000)
+
+#define QDMA_MAX_BUFLEN     (2048 * 10)
 
 #ifdef spin_lock_init
 #undef spin_lock_init
@@ -200,7 +200,7 @@ struct qdma_rx_queue {
 
 	enum rte_pmd_qdma_bypass_desc_len	bypass_desc_sz:7;
 	uint8_t			func_id; /**< RX queue index. */
-	uint32_t		ep_addr;
+	uint64_t		ep_addr;
 
 	int8_t			ringszidx;
 	int8_t			cmpt_ringszidx;
@@ -221,7 +221,7 @@ struct qdma_rx_queue {
 	/**< pend_pkt_avg_thr_lo: lower average threshold */
 	unsigned int pend_pkt_avg_thr_lo;
 	/**< sorted_c2h_cntr_idx: sorted c2h counter index */
-	unsigned char sorted_c2h_cntr_idx;
+	int8_t sorted_c2h_cntr_idx;
 	/**< c2h_cntr_monitor_cnt: c2h counter stagnant monitor count */
 	unsigned char c2h_cntr_monitor_cnt;
 #endif //QDMA_LATENCY_OPTIMIZED
@@ -253,7 +253,7 @@ struct qdma_tx_queue {
 
 	struct qdma_pkt_stats stats;
 
-	uint32_t			ep_addr;
+	uint64_t			ep_addr;
 	uint32_t			queue_id; /* TX queue index. */
 	uint32_t			num_queues; /* TX queue index. */
 	const struct rte_memzone	*tx_mz;
@@ -286,7 +286,7 @@ struct qdma_pci_dev {
 	/* Driver Attributes */
 	uint32_t qsets_en;  /* no. of queue pairs enabled */
 	uint32_t queue_base;
-	uint8_t func_id;  /* Function id */
+	uint16_t func_id;  /* Function id */
 
 	/* DMA identifier used by the resource manager
 	 * for the DMA instances used by this driver
@@ -299,6 +299,9 @@ struct qdma_pci_dev {
 	uint8_t cmpt_desc_len;
 	uint8_t c2h_bypass_mode;
 	uint8_t h2c_bypass_mode;
+#ifdef TANDEM_BOOT_SUPPORTED
+	uint8_t en_st_mode;
+#endif
 	uint8_t trigger_mode;
 	uint8_t timer_count;
 
@@ -404,4 +407,6 @@ struct rte_memzone *qdma_zone_reserve(struct rte_eth_dev *dev,
 bool is_qdma_supported(struct rte_eth_dev *dev);
 bool is_vf_device_supported(struct rte_eth_dev *dev);
 bool is_pf_device_supported(struct rte_eth_dev *dev);
+
+void qdma_check_errors(void *arg);
 #endif /* ifndef __QDMA_H__ */

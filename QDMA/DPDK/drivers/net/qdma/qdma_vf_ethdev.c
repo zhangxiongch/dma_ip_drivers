@@ -1,7 +1,8 @@
 /*-
  * BSD LICENSE
  *
- * Copyright(c) 2017-2020 Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2017-2022 Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Advanced Micro Devices, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -36,7 +37,6 @@
 #include <sys/fcntl.h>
 #include <rte_memzone.h>
 #include <rte_string_fns.h>
-#include <rte_ethdev_pci.h>
 #include <rte_malloc.h>
 #include <rte_dev.h>
 #include <rte_pci.h>
@@ -47,7 +47,6 @@
 #include <unistd.h>
 #include <string.h>
 #include <linux/pci.h>
-
 #include "qdma.h"
 #include "version.h"
 #include "qdma_access_common.h"
@@ -234,6 +233,13 @@ static struct rte_pci_id qdma_vf_pci_id_tbl[] = {
 	RTE_PCI_DEV_ID_DECL(PCI_VENDOR_ID_XILINX, 0xc248)	/* VF on PF 2 */
 	RTE_PCI_DEV_ID_DECL(PCI_VENDOR_ID_XILINX, 0xc348)	/* VF on PF 3 */
 
+	/** Gen 5 VF */
+	/** PCIe lane width x8 */
+	RTE_PCI_DEV_ID_DECL(PCI_VENDOR_ID_XILINX, 0xc058)	/* VF on PF 0 */
+	RTE_PCI_DEV_ID_DECL(PCI_VENDOR_ID_XILINX, 0xc158)	/* VF on PF 1 */
+	RTE_PCI_DEV_ID_DECL(PCI_VENDOR_ID_XILINX, 0xc258)	/* VF on PF 2 */
+	RTE_PCI_DEV_ID_DECL(PCI_VENDOR_ID_XILINX, 0xc358)	/* VF on PF 3 */
+
 	{ .vendor_id = 0, /* sentinel */ },
 };
 
@@ -298,7 +304,7 @@ static int qdma_vf_set_qrange(struct rte_eth_dev *dev)
 		return -ENOMEM;
 
 	qdma_mbox_compose_vf_fmap_prog(qdma_dev->func_id,
-					qdma_dev->dev_cap.num_qs,
+					(uint16_t)qdma_dev->qsets_en,
 					(int)qdma_dev->queue_base,
 					m->raw_data);
 	rv = qdma_mbox_msg_send(dev, m, MBOX_OP_RSP_TIMEOUT);
@@ -380,7 +386,7 @@ static int qdma_rxq_context_setup(struct rte_eth_dev *dev, uint16_t qid)
 		cmpt_desc_fmt = CMPT_CNTXT_DESC_SIZE_8B;
 		break;
 	}
-	descq_conf.ring_bs_addr = rxq->rx_mz->phys_addr;
+	descq_conf.ring_bs_addr = rxq->rx_mz->iova;
 	descq_conf.en_bypass = rxq->en_bypass;
 	descq_conf.irq_arm = 0;
 	descq_conf.at = 0;
@@ -396,7 +402,7 @@ static int qdma_rxq_context_setup(struct rte_eth_dev *dev, uint16_t qid)
 	} else {/* st c2h*/
 		descq_conf.desc_sz = SW_DESC_CNTXT_C2H_STREAM_DMA;
 		descq_conf.forced_en = 1;
-		descq_conf.cmpt_ring_bs_addr = rxq->rx_cmpt_mz->phys_addr;
+		descq_conf.cmpt_ring_bs_addr = rxq->rx_cmpt_mz->iova;
 		descq_conf.cmpt_desc_sz = cmpt_desc_fmt;
 		descq_conf.triggermode = rxq->triggermode;
 
@@ -458,7 +464,7 @@ static int qdma_txq_context_setup(struct rte_eth_dev *dev, uint16_t qid)
 	memset(&descq_conf, 0, sizeof(struct mbox_descq_conf));
 	txq = (struct qdma_tx_queue *)dev->data->tx_queues[qid];
 	qid_hw =  qdma_dev->queue_base + txq->queue_id;
-	descq_conf.ring_bs_addr = txq->tx_mz->phys_addr;
+	descq_conf.ring_bs_addr = txq->tx_mz->iova;
 	descq_conf.en_bypass = txq->en_bypass;
 	descq_conf.wbi_intvl_en = 1;
 	descq_conf.wbi_chk = 1;
@@ -588,7 +594,7 @@ static int qdma_vf_dev_infos_get(__rte_unused struct rte_eth_dev *dev,
 	return 0;
 }
 
-static void qdma_vf_dev_stop(struct rte_eth_dev *dev)
+static int qdma_vf_dev_stop(struct rte_eth_dev *dev)
 {
 #ifdef RTE_LIBRTE_QDMA_DEBUG_DRIVER
 	struct qdma_pci_dev *qdma_dev = dev->data->dev_private;
@@ -602,9 +608,11 @@ static void qdma_vf_dev_stop(struct rte_eth_dev *dev)
 		qdma_vf_dev_tx_queue_stop(dev, qid);
 	for (qid = 0; qid < dev->data->nb_rx_queues; qid++)
 		qdma_vf_dev_rx_queue_stop(dev, qid);
+
+	return 0;
 }
 
-static void qdma_vf_dev_close(struct rte_eth_dev *dev)
+int qdma_vf_dev_close(struct rte_eth_dev *dev)
 {
 	struct qdma_pci_dev *qdma_dev = dev->data->dev_private;
 	struct qdma_tx_queue *txq;
@@ -700,6 +708,8 @@ static void qdma_vf_dev_close(struct rte_eth_dev *dev)
 	rte_free(qdma_dev->q_info);
 	qdma_dev->q_info = NULL;
 	qdma_dev->dev_configured = 0;
+
+	return 0;
 }
 
 static int qdma_vf_dev_reset(struct rte_eth_dev *dev)
@@ -1105,14 +1115,16 @@ static int eth_qdma_vf_dev_init(struct rte_eth_dev *dev)
 		return -EINVAL;
 	}
 
-	/* Store BAR address and length of User BAR */
+	/* Store BAR address and length of AXI Master Lite BAR(user bar)*/
 	if (dma_priv->user_bar_idx >= 0) {
 		baseaddr = (uint8_t *)
 			     pci_dev->mem_resource[dma_priv->user_bar_idx].addr;
 		dma_priv->bar_addr[dma_priv->user_bar_idx] = baseaddr;
 	}
 
-	if (dma_priv->ip_type == QDMA_VERSAL_HARD_IP)
+	if (dma_priv->ip_type == QDMA_VERSAL_HARD_IP &&
+			dma_priv->device_type ==
+			QDMA_DEVICE_VERSAL_CPM4)
 		dma_priv->dev_cap.mailbox_intr = 0;
 	else
 		dma_priv->dev_cap.mailbox_intr = 1;

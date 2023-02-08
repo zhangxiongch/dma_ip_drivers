@@ -1,8 +1,8 @@
 /*
  * This file is part of the Xilinx DMA IP Core driver for Linux
  *
- * Copyright (c) 2017-2020,  Xilinx, Inc.
- * All rights reserved.
+ * Copyright (c) 2017-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -107,12 +107,12 @@ unsigned int qdma_get_qmax(unsigned long dev_hndl);
  * qdma_set_intr_rngsz() - Handler function to set the intr_ring_size value
  *
  * @param[in]	dev_hndl:	qdma device handle
- * @param[in]	rngsz:		interrupt aggregation ring size
+ * @param[in]	intr_rngsz:	interrupt aggregation ring size
  *
  * @return	QDMA_OPERATION_SUCCESSFUL on success
  * @return	<0 on failure
  *****************************************************************************/
-int qdma_set_intr_rngsz(unsigned long dev_hndl, u32 rngsz);
+int qdma_set_intr_rngsz(unsigned long dev_hndl, u32 intr_rngsz);
 
 /*****************************************************************************/
 /**

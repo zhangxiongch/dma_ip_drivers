@@ -2,8 +2,8 @@
  * This file is part of the QDMA userspace application
  * to enable the user to execute the QDMA functionality
  *
- * Copyright (c) 2018-2020,  Xilinx, Inc.
- * All rights reserved.
+ * Copyright (c) 2018-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is licensed under BSD-style license (found in the
  * LICENSE file in the root directory of this source tree)
@@ -42,12 +42,22 @@ static int (*xnl_proc_fn[XNL_CMD_MAX])(struct xcmd_info *xcmd) = {
 	NULL,                    /* XNL_CMD_Q_UDD */
 	qdma_dev_get_global_csr, /* XNL_CMD_GLOBAL_CSR */
 	qdma_dev_cap,            /* XNL_CMD_DEV_CAP */
-	NULL                     /* XNL_CMD_GET_Q_STATE */
+	NULL,                    /* XNL_CMD_GET_Q_STATE */
+	qdma_reg_info_read,       /* XNL_CMD_REG_INFO_READ */
+#ifdef TANDEM_BOOT_SUPPORTED
+	qdma_en_st,           /* XNL_CMD_EN_ST */
+#endif
+};
+
+static const char *desc_engine_mode[] = {
+	"Internal and Bypass mode",
+	"Bypass only mode",
+	"Inernal only mode"
 };
 
 static void dump_dev_cap(struct xcmd_info *xcmd)
 {
-	printf("%s", xcmd->resp.cap.version_str);
+	printf("%s\n\n", xcmd->resp.cap.version_str);
 	printf("=============Hardware Capabilities============\n\n");
 	printf("Number of PFs supported                : %u\n", xcmd->resp.cap.num_pfs);
 	printf("Total number of queues supported       : %u\n", xcmd->resp.cap.num_qs);
@@ -56,7 +66,15 @@ static void dump_dev_cap(struct xcmd_info *xcmd)
 	printf("ST enabled                             : %s\n",	xcmd->resp.cap.st_en ? "yes":"no");
 	printf("MM enabled                             : %s\n", xcmd->resp.cap.mm_en ? "yes":"no");
 	printf("Mailbox enabled                        : %s\n", xcmd->resp.cap.mailbox_en ? "yes":"no");
-	printf("MM completion enabled                  : %s\n\n", xcmd->resp.cap.mm_cmpt_en ? "yes":"no");
+	printf("MM completion enabled                  : %s\n", xcmd->resp.cap.mm_cmpt_en ? "yes":"no");
+	printf("Debug Mode enabled                     : %s\n", xcmd->resp.cap.debug_mode ? "yes":"no");
+
+	if (xcmd->resp.cap.desc_eng_mode < sizeof(desc_engine_mode) / sizeof(desc_engine_mode[0])) {
+		printf("Desc Engine Mode                       : %s\n",
+			   desc_engine_mode[xcmd->resp.cap.desc_eng_mode]);
+	}else {
+		printf("Desc Engine Mode                       : INVALID\n");
+	}
 }
 
 static void dump_dev_info(struct xcmd_info *xcmd)
@@ -69,7 +87,7 @@ static void dump_dev_info(struct xcmd_info *xcmd)
 	printf("HW q base                              : %u\n", xcmd->resp.dev_info.qbase);
 	printf("Max queues                             : %u\n",	xcmd->resp.dev_info.qmax);
 	printf("Config bar                             : %u\n", xcmd->resp.dev_info.config_bar);
-	printf("User bar                               : %u\n", xcmd->resp.dev_info.user_bar);
+	printf("AXI Master Lite bar                    : %u\n", xcmd->resp.dev_info.user_bar);
 }
 
 static void dump_dev_stat(struct xcmd_info *xcmd)
@@ -154,6 +172,8 @@ void xnl_dump_cmd_resp(struct xcmd_info *xcmd)
 		break;
 	case XNL_CMD_GLOBAL_CSR:
 			dump_dev_global_csr(xcmd);
+		break;
+	case XNL_CMD_REG_INFO_READ:
 		break;
 	default:
 		break;

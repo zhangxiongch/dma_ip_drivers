@@ -1,8 +1,8 @@
 /*
  * This file is part of the Xilinx DMA IP Core driver for Linux
  *
- * Copyright (c) 2017-2020,  Xilinx, Inc.
- * All rights reserved.
+ * Copyright (c) 2017-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -58,7 +58,7 @@ static DEFINE_MUTEX(res_mutex);
 
 void *qdma_calloc(uint32_t num_blocks, uint32_t size)
 {
-	return kzalloc(num_blocks * size, GFP_KERNEL);
+	return kzalloc((num_blocks * (size_t)size), GFP_KERNEL);
 }
 
 void qdma_memfree(void *memptr)
@@ -113,20 +113,6 @@ void qdma_resource_lock_give(void)
 	mutex_unlock(&res_mutex);
 }
 
-void qdma_hw_error_handler(void *dev_hndl, enum qdma_error_idx err_idx)
-{
-	struct xlnx_dma_dev *xdev = (struct xlnx_dma_dev *)dev_hndl;
-
-	pr_err("%s detected", xdev->hw.qdma_hw_get_error_name(err_idx));
-}
-
-void qdma_get_device_attr(void *dev_hndl, struct qdma_dev_attributes **dev_cap)
-{
-	struct xlnx_dma_dev *xdev = (struct xlnx_dma_dev *)dev_hndl;
-
-	*dev_cap = &xdev->dev_cap;
-}
-
 void qdma_get_hw_access(void *dev_hndl, struct qdma_hw_access **hw)
 {
 	struct xlnx_dma_dev *xdev = (struct xlnx_dma_dev *)dev_hndl;
@@ -143,4 +129,17 @@ int qdma_get_err_code(int acc_err_code)
 {
 	acc_err_code *= -1;
 	return -(error_code_map_list[acc_err_code].err_code);
+}
+
+int qdma_io_wmb(void)
+{
+	/*
+	 * TODO: Write memory barrier(wmb) calls are happening differently
+	 * for DPDK and Linux drivers. DPDK driver is calling wmb() before
+	 * pidx/cmpt_cidx updates, where as linux driver calls wmb() after
+	 * pidx/cmpt_cidx updates. As linux driver performance numbers
+	 * are good with current changes, so keeping this function
+	 * as place holder for furure changes related to memory barriers.
+	 */
+	return 0;
 }

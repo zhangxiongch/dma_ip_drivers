@@ -1,7 +1,8 @@
 /*-
  * BSD LICENSE
  *
- * Copyright(c) 2019-2020 Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2019-2022 Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Advanced Micro Devices, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -213,8 +214,10 @@ enum rte_pmd_qdma_xdebug_desc_type {
 enum rte_pmd_qdma_device_type {
 	/** QDMA Soft device e.g. UltraScale+ IP's  */
 	RTE_PMD_QDMA_DEVICE_SOFT,
-	/** QDMA Versal device */
-	RTE_PMD_QDMA_DEVICE_VERSAL,
+	/** QDMA Versal CPM4 device */
+	RTE_PMD_QDMA_DEVICE_VERSAL_CPM4,
+	/** QDMA Versal CPM5 device */
+	RTE_PMD_QDMA_DEVICE_VERSAL_CPM5,
 	/** Invalid QDMA device  */
 	RTE_PMD_QDMA_DEVICE_NONE
 };
@@ -259,6 +262,12 @@ struct rte_pmd_qdma_dev_attributes {
 	uint8_t mm_cmpt_en:1;
 	/** Indicates whether Mailbox supported or not */
 	uint8_t mailbox_en:1;
+	/** Debug mode is enabled/disabled for IP */
+	uint8_t debug_mode:1;
+	/** Descriptor Engine mode:
+	 * Internal only/Bypass only/Internal & Bypass
+	 */
+	uint8_t desc_eng_mode:2;
 	/** Number of MM channels */
 	uint8_t mm_channel_max;
 
@@ -297,6 +306,21 @@ struct rte_pmd_qdma_dev_attributes {
  * @ingroup rte_pmd_qdma_func
  ******************************************************************************/
 int rte_pmd_qdma_dbg_regdump(uint8_t port_id);
+
+/******************************************************************************/
+/**
+ * Dumps the QDMA register field information for a given register offset
+ *
+ * @param	port_id Port ID
+ * @param	reg_addr Register Address
+ *
+ * @return	'0' on success and "< 0" on failure
+ *
+ * @note	None
+ * @ingroup rte_pmd_qdma_func
+ ******************************************************************************/
+int rte_pmd_qdma_dbg_reg_info_dump(uint8_t port_id,
+			uint32_t num_regs, uint32_t reg_addr);
 
 /******************************************************************************/
 /**
@@ -350,8 +374,8 @@ int rte_pmd_qdma_dbg_qdesc(uint8_t port_id, uint16_t queue, int start,
  *
  * @param	port_id Port ID
  * @param	config_bar_idx Config BAR index
- * @param	user_bar_idx   User BAR index
- * @param	bypass_bar_idx Bypass BAR index
+ * @param	user_bar_idx   AXI Master Lite BAR(user bar) index
+ * @param	bypass_bar_idx AXI Bridge Master BAR(bypass bar) index
  *
  * @return	'0' on success and '< 0' on failure
  *
@@ -564,7 +588,7 @@ int rte_pmd_qdma_set_c2h_descriptor_prefetch(int port_id, uint32_t qid,
  * @ingroup rte_pmd_qdma_func
  *****************************************************************************/
 int rte_pmd_qdma_set_mm_endpoint_addr(int port_id, uint32_t qid,
-			enum rte_pmd_qdma_dir_type dir, uint32_t addr);
+			enum rte_pmd_qdma_dir_type dir, uint64_t addr);
 
 /******************************************************************************/
 /**
@@ -699,6 +723,124 @@ int rte_pmd_qdma_dev_cmptq_stop(int port_id, uint32_t qid);
  ******************************************************************************/
 uint16_t rte_pmd_qdma_mm_cmpt_process(int port_id, uint32_t qid,
 		void *cmpt_buff, uint16_t nb_entries);
+
+/*****************************************************************************/
+/**
+ * DPDK PMD function to close the device.
+ *
+ * @param   port_id Port ID
+ *
+ * @return  '0' on success and '< 0' on failure
+ *
+ ******************************************************************************/
+int rte_pmd_qdma_dev_close(uint16_t port_id);
+
+/*****************************************************************************/
+/**
+ * DPDK PMD function to fill fast-path operations.
+ *
+ * @param   port_id Port ID
+ *
+ * @return  on success return 0
+ *
+ ******************************************************************************/
+int rte_pmd_qdma_dev_fp_ops_config(int port_id);
+
+/*****************************************************************************/
+/**
+ * DPDK PMD compatibility function to read pci registers.
+ *
+ * @param   port_id Port ID
+ * @param   bar Bar
+ * @param   offset Offset
+ *
+ * @return  pci_read_reg value
+ *
+ ******************************************************************************/
+unsigned int rte_pmd_qdma_compat_pci_read_reg(int port_id, unsigned int bar, unsigned int offset);
+
+/*****************************************************************************/
+/**
+ * DPDK PMD compatibility function to write pci registers.
+ *
+ * @param   port_id Port ID
+ * @param   bar Bar
+ * @param   offset Offset
+ * @param   reg_val Value which needs to write
+ *
+ ******************************************************************************/
+void rte_pmd_qdma_compat_pci_write_reg(int port_id, uint32_t bar, uint32_t offset, uint32_t reg_val);
+
+/*****************************************************************************/
+/**
+ * DPDK PMD compatibility function to get bdf
+ *
+ * @param   m_id Port ID
+ * @param   bus Bus
+ * @param   dev Device
+ * @param   fn Function
+ *
+ ******************************************************************************/
+void rte_pmd_qdma_get_bdf(uint32_t m_id, uint32_t *bus, uint32_t *dev, uint32_t *fn);
+
+/*****************************************************************************/
+/**
+ * DPDK PMD compatibility function to reserve memzone
+ *
+ ******************************************************************************/
+void rte_pmd_qdma_compat_memzone_reserve_aligned(void);
+
+/*****************************************************************************/
+/**
+ * DPDK PMD compatibility function to device remove
+ *
+ * @param   port_id Port ID
+ * @return  device id to remove
+ *
+ ******************************************************************************/
+int rte_pmd_qdma_dev_remove(int port_id);
+
+/*****************************************************************************/
+/**
+ * DPDK PMD compatibility function to get device id
+ *
+ * @param   port_id Port ID
+ * @return  device id to get
+ *
+ ******************************************************************************/
+uint16_t rte_pmd_qdma_get_dev_id(int port_id);
+
+/*****************************************************************************/
+/**
+ * DPDK PMD compatibility function to device started
+ *
+ * @param   port_id Port ID
+ * @param   status Enable/Disable
+ *
+ ******************************************************************************/
+void rte_pmd_qdma_dev_started(int port_id, bool status);
+
+/*****************************************************************************/
+/**
+ * DPDK PMD compatibility function for eth dev to pci
+ *
+ * @param   port_id Port ID
+ * @return  rte_pci_device* pci_device
+ *
+ ******************************************************************************/
+
+struct rte_pci_device* rte_pmd_qdma_eth_dev_to_pci(int port_id);
+
+/*****************************************************************************/
+/**
+ * DPDK PMD compatibility function to get rte device
+ *
+ * @param   port_id Port ID
+ * @return  rte_device* rte_device
+ *
+ ******************************************************************************/
+struct rte_device* rte_pmd_qdma_get_device(int port_id);
+
 #ifdef __cplusplus
 }
 #endif

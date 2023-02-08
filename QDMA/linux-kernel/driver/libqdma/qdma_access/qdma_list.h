@@ -1,5 +1,6 @@
 /*
- * Copyright(c) 2019-2020 Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2019-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -14,8 +15,12 @@
  * the file called "COPYING".
  */
 
-#ifndef QDMA_LIST_H_
-#define QDMA_LIST_H_
+#ifndef __QDMA_LIST_H_
+#define __QDMA_LIST_H_
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /**
  * DOC: QDMA common library provided list implementation definitions
@@ -114,4 +119,8 @@ void qdma_list_insert_after(struct qdma_list_head *new_node,
  *****************************************************************************/
 void qdma_list_del(struct qdma_list_head *node);
 
-#endif /* QDMA_LIST_H_ */
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* __QDMA_LIST_H_ */

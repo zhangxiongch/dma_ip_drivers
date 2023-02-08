@@ -1,7 +1,8 @@
 /*-
  * BSD LICENSE
  *
- * Copyright(c) 2017-2020 Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2017-2022 Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Advanced Micro Devices, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -35,7 +36,6 @@
 #include <sys/fcntl.h>
 #include <rte_memzone.h>
 #include <rte_string_fns.h>
-#include <rte_ethdev_pci.h>
 #include <rte_malloc.h>
 #include <rte_dev.h>
 #include <rte_pci.h>
@@ -52,6 +52,7 @@
 #include "qdma_reg_dump.h"
 #include "qdma_mbox_protocol.h"
 #include "qdma_mbox.h"
+
 #define xdebug_info(args...) rte_log(RTE_LOG_INFO, RTE_LOGTYPE_USER1,\
 					## args)
 #define xdebug_error(args...) rte_log(RTE_LOG_ERR, RTE_LOGTYPE_USER1,\
@@ -62,6 +63,12 @@ struct xdebug_desc_param {
 	int start;
 	int end;
 	enum rte_pmd_qdma_xdebug_desc_type type;
+};
+
+const char *qdma_desc_eng_mode_info[QDMA_DESC_ENG_MODE_MAX] = {
+	"Internal and Bypass mode",
+	"Bypass only mode",
+	"Internal only mode"
 };
 
 static void print_header(const char *str)
@@ -115,7 +122,7 @@ static int qdma_h2c_struct_dump(uint8_t port_id, uint16_t queue)
 				tx_q->port_id);
 		xdebug_info("\t\t ringszidx           :%x\n",
 				tx_q->ringszidx);
-		xdebug_info("\t\t ep_addr             :%x\n",
+		xdebug_info("\t\t ep_addr             :0x%" PRIx64 "\n",
 				tx_q->ep_addr);
 	}
 
@@ -164,7 +171,7 @@ static int qdma_c2h_struct_dump(uint8_t port_id, uint16_t queue)
 				rx_q->nb_rx_desc);
 		xdebug_info("\t\t nb_rx_cmpt_desc     :%x\n",
 				rx_q->nb_rx_cmpt_desc);
-		xdebug_info("\t\t ep_addr             :%x\n",
+		xdebug_info("\t\t ep_addr             :0x%" PRIx64 "\n",
 				rx_q->ep_addr);
 		xdebug_info("\t\t st_mode             :%x\n",
 				rx_q->st_mode);
@@ -240,6 +247,7 @@ static int qdma_config_reg_dump(uint8_t port_id)
 	struct rte_eth_dev *dev;
 	struct qdma_pci_dev *qdma_dev;
 	enum qdma_ip_type ip_type;
+	enum qdma_device_type device_type;
 	char *buf = NULL;
 	int buflen;
 	int ret;
@@ -255,6 +263,7 @@ static int qdma_config_reg_dump(uint8_t port_id)
 	dev = &rte_eth_devices[port_id];
 	qdma_dev = dev->data->dev_private;
 	ip_type = (enum qdma_ip_type)qdma_dev->ip_type;
+	device_type = (enum qdma_device_type)qdma_dev->device_type;
 
 	if (qdma_dev->is_vf) {
 		reg_len = (QDMA_MAX_REGISTER_DUMP *
@@ -267,7 +276,8 @@ static int qdma_config_reg_dump(uint8_t port_id)
 			return -ENOMEM;
 		}
 
-		ret = qdma_acc_reg_dump_buf_len(dev, ip_type, &buflen);
+		ret = qdma_acc_reg_dump_buf_len(dev, ip_type,
+				device_type, &buflen);
 		if (ret < 0) {
 			xdebug_error("Failed to get register dump buffer length\n");
 			return ret;
@@ -302,7 +312,7 @@ static int qdma_config_reg_dump(uint8_t port_id)
 			}
 
 			rcv_len = qdma_acc_dump_config_reg_list(dev,
-				ip_type, num_regs,
+				ip_type, device_type, num_regs,
 				reg_list, buf + len, buflen - len);
 			if (len < 0) {
 				xdebug_error("Failed to dump config regs "
@@ -324,7 +334,7 @@ static int qdma_config_reg_dump(uint8_t port_id)
 		rte_free(buf);
 	} else {
 		ret = qdma_acc_reg_dump_buf_len(dev,
-			ip_type, &buflen);
+			ip_type, device_type, &buflen);
 		if (ret < 0) {
 			xdebug_error("Failed to get register dump buffer length\n");
 			return ret;
@@ -344,7 +354,7 @@ static int qdma_config_reg_dump(uint8_t port_id)
 				"                                    Value(Hex) Value(Dec)\n");
 
 		ret = qdma_acc_dump_config_regs(dev, qdma_dev->is_vf,
-			ip_type, buf, buflen);
+			ip_type, device_type, buf, buflen);
 		if (ret < 0) {
 			xdebug_error("Insufficient space to dump Config Bar register values\n");
 			rte_free(buf);
@@ -375,9 +385,9 @@ static int qdma_device_dump(uint8_t port_id)
 
 	xdebug_info("\t\t config BAR index         :%x\n",
 			qdma_dev->config_bar_idx);
-	xdebug_info("\t\t user BAR index           :%x\n",
+	xdebug_info("\t\t AXI Master Lite BAR index           :%x\n",
 			qdma_dev->user_bar_idx);
-	xdebug_info("\t\t bypass BAR index         :%x\n",
+	xdebug_info("\t\t AXI Bridge Master BAR index         :%x\n",
 			qdma_dev->bypass_bar_idx);
 	xdebug_info("\t\t qsets enable             :%x\n",
 			qdma_dev->qsets_en);
@@ -427,6 +437,10 @@ static int qdma_device_dump(uint8_t port_id)
 			qdma_dev->dev_cap.mailbox_en);
 	xdebug_info("\t\t Num of MM channels       :%x\n",
 			qdma_dev->dev_cap.mm_channel_max);
+	xdebug_info("\t\t Descriptor engine mode   :%s\n",
+		qdma_desc_eng_mode_info[qdma_dev->dev_cap.desc_eng_mode]);
+	xdebug_info("\t\t Debug mode enable        :%x\n",
+			qdma_dev->dev_cap.debug_mode);
 
 	return 0;
 }
@@ -483,6 +497,7 @@ static int qdma_c2h_context_dump(uint8_t port_id, uint16_t queue)
 	struct qdma_descq_context queue_context;
 	enum qdma_dev_q_type q_type;
 	enum qdma_ip_type ip_type;
+	enum qdma_device_type device_type;
 	uint16_t qid;
 	uint8_t st_mode;
 	char *buf = NULL;
@@ -498,6 +513,7 @@ static int qdma_c2h_context_dump(uint8_t port_id, uint16_t queue)
 	qdma_dev = dev->data->dev_private;
 	qid = qdma_dev->queue_base + queue;
 	ip_type = (enum qdma_ip_type)qdma_dev->ip_type;
+	device_type = (enum qdma_device_type)qdma_dev->device_type;
 	st_mode = qdma_dev->q_info[qid].queue_mode;
 	q_type = QDMA_DEV_Q_TYPE_C2H;
 
@@ -510,7 +526,7 @@ static int qdma_c2h_context_dump(uint8_t port_id, uint16_t queue)
 		"\n ***** C2H Queue Contexts on port_id: %d for q_id: %d *****\n",
 		port_id, qid);
 
-	ret = qdma_acc_context_buf_len(dev, ip_type, st_mode,
+	ret = qdma_acc_context_buf_len(dev, ip_type, device_type, st_mode,
 			q_type, &buflen);
 	if (ret < 0) {
 		xdebug_error("Failed to get context buffer length,\n");
@@ -535,7 +551,7 @@ static int qdma_c2h_context_dump(uint8_t port_id, uint16_t queue)
 			return qdma_get_error_code(ret);
 		}
 
-		ret = qdma_acc_dump_queue_context(dev, ip_type,
+		ret = qdma_acc_dump_queue_context(dev, ip_type, device_type,
 			st_mode, q_type, &queue_context, buf, buflen);
 		if (ret < 0) {
 			xdebug_error("Failed to dump c2h queue context\n");
@@ -543,8 +559,9 @@ static int qdma_c2h_context_dump(uint8_t port_id, uint16_t queue)
 			return qdma_get_error_code(ret);
 		}
 	} else {
-		ret = qdma_acc_read_dump_queue_context(dev, ip_type,
-			qid, st_mode, q_type, buf, buflen);
+		ret = qdma_acc_read_dump_queue_context(dev,
+				ip_type, device_type, qdma_dev->func_id, qid,
+				st_mode, q_type, buf, buflen);
 		if (ret < 0) {
 			xdebug_error("Failed to read and dump c2h queue context\n");
 			rte_free(buf);
@@ -565,6 +582,7 @@ static int qdma_h2c_context_dump(uint8_t port_id, uint16_t queue)
 	struct qdma_descq_context queue_context;
 	enum qdma_dev_q_type q_type;
 	enum qdma_ip_type ip_type;
+	enum qdma_device_type device_type;
 	uint32_t buflen = 0;
 	uint16_t qid;
 	uint8_t st_mode;
@@ -580,6 +598,7 @@ static int qdma_h2c_context_dump(uint8_t port_id, uint16_t queue)
 	qdma_dev = dev->data->dev_private;
 	qid = qdma_dev->queue_base + queue;
 	ip_type = (enum qdma_ip_type)qdma_dev->ip_type;
+	device_type = (enum qdma_device_type)qdma_dev->device_type;
 	st_mode = qdma_dev->q_info[qid].queue_mode;
 	q_type = QDMA_DEV_Q_TYPE_H2C;
 
@@ -592,7 +611,7 @@ static int qdma_h2c_context_dump(uint8_t port_id, uint16_t queue)
 		"\n ***** H2C Queue Contexts on port_id: %d for q_id: %d *****\n",
 		port_id, qid);
 
-	ret = qdma_acc_context_buf_len(dev, ip_type, st_mode,
+	ret = qdma_acc_context_buf_len(dev, ip_type, device_type, st_mode,
 			q_type, &buflen);
 	if (ret < 0) {
 		xdebug_error("Failed to get context buffer length,\n");
@@ -618,15 +637,17 @@ static int qdma_h2c_context_dump(uint8_t port_id, uint16_t queue)
 		}
 
 		ret = qdma_acc_dump_queue_context(dev, ip_type,
-			st_mode, q_type, &queue_context, buf, buflen);
+				device_type, st_mode, q_type,
+				&queue_context, buf, buflen);
 		if (ret < 0) {
 			xdebug_error("Failed to dump h2c queue context\n");
 			rte_free(buf);
 			return qdma_get_error_code(ret);
 		}
 	} else {
-		ret = qdma_acc_read_dump_queue_context(dev, ip_type,
-				qid, st_mode, q_type, buf, buflen);
+		ret = qdma_acc_read_dump_queue_context(dev,
+				ip_type, device_type, qdma_dev->func_id, qid,
+				st_mode, q_type, buf, buflen);
 		if (ret < 0) {
 			xdebug_error("Failed to read and dump h2c queue context\n");
 			rte_free(buf);
@@ -647,6 +668,7 @@ static int qdma_cmpt_context_dump(uint8_t port_id, uint16_t queue)
 	struct qdma_descq_context queue_context;
 	enum qdma_dev_q_type q_type;
 	enum qdma_ip_type ip_type;
+	enum qdma_device_type device_type;
 	uint32_t buflen;
 	uint16_t qid;
 	uint8_t st_mode;
@@ -662,6 +684,7 @@ static int qdma_cmpt_context_dump(uint8_t port_id, uint16_t queue)
 	qdma_dev = dev->data->dev_private;
 	qid = qdma_dev->queue_base + queue;
 	ip_type = (enum qdma_ip_type)qdma_dev->ip_type;
+	device_type = (enum qdma_device_type)qdma_dev->device_type;
 	st_mode = qdma_dev->q_info[qid].queue_mode;
 	q_type = QDMA_DEV_Q_TYPE_CMPT;
 
@@ -674,7 +697,7 @@ static int qdma_cmpt_context_dump(uint8_t port_id, uint16_t queue)
 		"\n ***** CMPT Queue Contexts on port_id: %d for q_id: %d *****\n",
 		port_id, qid);
 
-	ret = qdma_acc_context_buf_len(dev, ip_type,
+	ret = qdma_acc_context_buf_len(dev, ip_type, device_type,
 			st_mode, q_type, &buflen);
 	if (ret < 0) {
 		xdebug_error("Failed to get context buffer length\n");
@@ -700,7 +723,7 @@ static int qdma_cmpt_context_dump(uint8_t port_id, uint16_t queue)
 		}
 
 		ret = qdma_acc_dump_queue_context(dev, ip_type,
-			st_mode, q_type,
+			device_type, st_mode, q_type,
 			&queue_context, buf, buflen);
 		if (ret < 0) {
 			xdebug_error("Failed to dump cmpt queue context\n");
@@ -709,7 +732,7 @@ static int qdma_cmpt_context_dump(uint8_t port_id, uint16_t queue)
 		}
 	} else {
 		ret = qdma_acc_read_dump_queue_context(dev,
-			ip_type, qid, st_mode,
+			ip_type, device_type, qdma_dev->func_id, qid, st_mode,
 			q_type, buf, buflen);
 		if (ret < 0) {
 			xdebug_error("Failed to read and dump cmpt queue context\n");
@@ -779,7 +802,8 @@ static int qdma_queue_desc_dump(uint8_t port_id,
 			for (x = param->start; x < param->end; x++) {
 				uint8_t *rx_bypass =
 						&rx_ring_bypass[x];
-				sprintf(str, "\nDescriptor ID %d\t", x);
+				snprintf(str, sizeof(str),
+						"\nDescriptor ID %d\t", x);
 				rte_hexdump(stdout, str,
 					(const void *)rx_bypass,
 					rxq->bypass_desc_sz);
@@ -793,7 +817,8 @@ static int qdma_queue_desc_dump(uint8_t port_id,
 				for (x = param->start; x < param->end; x++) {
 					struct qdma_ul_st_c2h_desc *rx_st =
 						&rx_ring_st[x];
-					sprintf(str, "\nDescriptor ID %d\t", x);
+					snprintf(str, sizeof(str),
+						"\nDescriptor ID %d\t", x);
 					rte_hexdump(stdout, str,
 					(const void *)rx_st,
 					sizeof(struct qdma_ul_st_c2h_desc));
@@ -803,7 +828,8 @@ static int qdma_queue_desc_dump(uint8_t port_id,
 					(struct qdma_ul_mm_desc *)rxq->rx_ring;
 				xdebug_info("\n====== C2H ring descriptors======\n");
 				for (x = param->start; x < param->end; x++) {
-					sprintf(str, "\nDescriptor ID %d\t", x);
+					snprintf(str, sizeof(str),
+						"\nDescriptor ID %d\t", x);
 					rte_hexdump(stdout, str,
 						(const void *)&rx_ring_mm[x],
 						sizeof(struct qdma_ul_mm_desc));
@@ -847,7 +873,8 @@ static int qdma_queue_desc_dump(uint8_t port_id,
 				uint32_t *cmpt_ring = (uint32_t *)
 					((uint64_t)(rxq->cmpt_ring) +
 					((uint64_t)x * rxq->cmpt_desc_len));
-				sprintf(str, "\nDescriptor ID %d\t", x);
+				snprintf(str, sizeof(str),
+						"\nDescriptor ID %d\t", x);
 				rte_hexdump(stdout, str,
 						(const void *)cmpt_ring,
 						rxq->cmpt_desc_len);
@@ -890,7 +917,8 @@ static int qdma_queue_desc_dump(uint8_t port_id,
 			for (x = param->start; x < param->end; x++) {
 				uint8_t *tx_bypass =
 					&tx_ring_bypass[x];
-				sprintf(str, "\nDescriptor ID %d\t", x);
+				snprintf(str, sizeof(str),
+						"\nDescriptor ID %d\t", x);
 				rte_hexdump(stdout, str,
 					(const void *)tx_bypass,
 					txq->bypass_desc_sz);
@@ -901,7 +929,8 @@ static int qdma_queue_desc_dump(uint8_t port_id,
 				(struct qdma_ul_st_h2c_desc *)txq->tx_ring;
 				xdebug_info("\n====== H2C ring descriptors=====\n");
 				for (x = param->start; x < param->end; x++) {
-					sprintf(str, "\nDescriptor ID %d\t", x);
+					snprintf(str, sizeof(str),
+						"\nDescriptor ID %d\t", x);
 					rte_hexdump(stdout, str,
 					(const void *)&qdma_h2c_ring[x],
 					sizeof(struct qdma_ul_st_h2c_desc));
@@ -911,7 +940,8 @@ static int qdma_queue_desc_dump(uint8_t port_id,
 					(struct qdma_ul_mm_desc *)txq->tx_ring;
 				xdebug_info("\n===== H2C ring descriptors=====\n");
 				for (x = param->start; x < param->end; x++) {
-					sprintf(str, "\nDescriptor ID %d\t", x);
+					snprintf(str, sizeof(str),
+						"\nDescriptor ID %d\t", x);
 					rte_hexdump(stdout, str,
 						(const void *)&tx_ring_mm[x],
 						sizeof(struct qdma_ul_mm_desc));
@@ -940,6 +970,49 @@ int rte_pmd_qdma_dbg_regdump(uint8_t port_id)
 		xdebug_error("Error dumping Global registers\n");
 		return err;
 	}
+	return 0;
+}
+
+int rte_pmd_qdma_dbg_reg_info_dump(uint8_t port_id,
+	uint32_t num_regs, uint32_t reg_addr)
+{
+	struct rte_eth_dev *dev;
+	struct qdma_pci_dev *qdma_dev;
+	enum qdma_ip_type ip_type;
+	enum qdma_device_type device_type;
+	char *buf = NULL;
+	int buflen = QDMA_MAX_BUFLEN;
+	int ret;
+
+	if (port_id >= rte_eth_dev_count_avail()) {
+		xdebug_error("Wrong port id %d\n", port_id);
+		return -EINVAL;
+	}
+
+	dev = &rte_eth_devices[port_id];
+	qdma_dev = dev->data->dev_private;
+	ip_type = (enum qdma_ip_type)qdma_dev->ip_type;
+	device_type = (enum qdma_device_type)qdma_dev->device_type;
+
+	/*allocate memory for register dump*/
+	buf = (char *)rte_zmalloc("QDMA_DUMP_BUF_REG_INFO", buflen,
+			RTE_CACHE_LINE_SIZE);
+	if (!buf) {
+		xdebug_error("Unable to allocate memory for reg info dump "
+				"size %d\n", buflen);
+		return -ENOMEM;
+	}
+
+	ret = qdma_acc_dump_reg_info(dev, ip_type, device_type,
+		reg_addr, num_regs, buf, buflen);
+	if (ret < 0) {
+		xdebug_error("Failed to dump reg field values\n");
+		rte_free(buf);
+		return qdma_get_error_code(ret);
+	}
+	xdebug_info("%s\n", buf);
+	rte_free(buf);
+
 	return 0;
 }
 

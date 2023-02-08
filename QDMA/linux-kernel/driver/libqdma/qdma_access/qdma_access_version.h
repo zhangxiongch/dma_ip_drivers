@@ -1,5 +1,6 @@
 /*
- * Copyright(c) 2019-2020 Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2019-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -14,13 +15,13 @@
  * the file called "COPYING".
  */
 
-#ifndef QDMA_VERSION_H_
-#define QDMA_VERSION_H_
+#ifndef __QDMA_ACCESS_VERSION_H_
+#define __QDMA_ACCESS_VERSION_H_
 
 
-#define QDMA_VERSION_MAJOR	2020
+#define QDMA_VERSION_MAJOR	2023
 #define QDMA_VERSION_MINOR	1
-#define QDMA_VERSION_PATCH	1
+#define QDMA_VERSION_PATCH	0
 
 #define QDMA_VERSION_STR	\
 	__stringify(QDMA_VERSION_MAJOR) "." \
@@ -33,4 +34,4 @@
 	  QDMA_VERSION_PATCH)
 
 
-#endif /* COMMON_QDMA_VERSION_H_ */
+#endif /* __QDMA_ACCESS_VERSION_H_ */

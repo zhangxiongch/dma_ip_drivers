@@ -1,8 +1,8 @@
 /*
  * This file is part of the Xilinx DMA IP Core driver for Linux
  *
- * Copyright (c) 2017-2020,  Xilinx, Inc.
- * All rights reserved.
+ * Copyright (c) 2017-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -109,7 +109,7 @@ static ssize_t show_intr_rngsz(struct device *dev,
 		return -EINVAL;
 
 	rngsz = qdma_get_intr_rngsz(xpdev->dev_hndl);
-	len = sprintf(buf, "%u\n", rngsz);
+	len = scnprintf(buf, PAGE_SIZE, "%u\n", rngsz);
 	if (len <= 0)
 		pr_err("copying rngsz to buffer failed with err: %d\n", len);
 
@@ -181,7 +181,7 @@ static ssize_t show_qmax(struct device *dev,
 		return -EINVAL;
 
 	qmax = qdma_get_qmax(xpdev->dev_hndl);
-	len = sprintf(buf, "%u\n", qmax);
+	len = scnprintf(buf, PAGE_SIZE, "%u\n", qmax);
 	if (len <= 0)
 		pr_err("copying qmax to buf failed with err: %d\n", len);
 
@@ -239,7 +239,8 @@ static ssize_t show_cmpl_status_acc(struct device *dev,
 		return -EINVAL;
 
 	cmpl_status_acc = qdma_get_wb_intvl(xpdev->dev_hndl);
-	len = sprintf(buf, "%u\n", cmpl_status_acc);
+	len = scnprintf(buf, PAGE_SIZE,
+			"%u\n", cmpl_status_acc);
 	if (len <= 0)
 		pr_err("copying cmpl status acc value to buf failed with err: %d\n",
 				len);
@@ -324,10 +325,11 @@ static ssize_t show_c2h_buf_sz(struct device *dev,
 
 	qdma_get_buf_sz(xpdev->dev_hndl, c2h_buf_sz);
 
-	len += sprintf(buf + len, "%hu", c2h_buf_sz[0]);
+	len += scnprintf(buf + len, PAGE_SIZE - len, "%u", c2h_buf_sz[0]);
 	for (i = 1; i < QDMA_GLOBAL_CSR_ARRAY_SZ; i++)
-		len += sprintf(buf + len, " %hu", c2h_buf_sz[i]);
-	len += sprintf(buf + len, "%s", "\n\0");
+		len += scnprintf(buf + len,
+					PAGE_SIZE - len, " %u", c2h_buf_sz[i]);
+	len += scnprintf(buf + len, PAGE_SIZE - len, "%s", "\n\0");
 
 	return len;
 }
@@ -430,15 +432,17 @@ static ssize_t show_glbl_rng_sz(struct device *dev,
 	unsigned int glbl_ring_sz[QDMA_GLOBAL_CSR_ARRAY_SZ] = {0};
 
 	xpdev = (struct xlnx_pci_dev *)dev_get_drvdata(dev);
-	xdev = (struct xlnx_dma_dev *)(xpdev->dev_hndl);
 	if (!xpdev)
 		return -EINVAL;
 
+	xdev = (struct xlnx_dma_dev *)(xpdev->dev_hndl);
 	qdma_get_ring_sizes(xdev, 0, QDMA_GLOBAL_CSR_ARRAY_SZ, glbl_ring_sz);
-	len += sprintf(buf + len, "%hu", glbl_ring_sz[0]);
+	len += scnprintf(buf + len, PAGE_SIZE - len, "%u", glbl_ring_sz[0]);
 	for (i = 1; i < QDMA_GLOBAL_CSR_ARRAY_SZ; i++)
-		len += sprintf(buf + len, " %hu", glbl_ring_sz[i]);
-	len += sprintf(buf + len, "%s", "\n\0");
+		len += scnprintf(buf + len,
+					PAGE_SIZE - len,
+					" %u", glbl_ring_sz[i]);
+	len += scnprintf(buf + len, PAGE_SIZE - len, "%s", "\n\0");
 
 	return len;
 }
@@ -544,10 +548,12 @@ static ssize_t show_c2h_timer_cnt(struct device *dev,
 
 	qdma_get_timer_cnt(xpdev->dev_hndl, c2h_timer_cnt);
 
-	len += sprintf(buf + len, "%hhu", c2h_timer_cnt[0]);
+	len += scnprintf(buf + len, PAGE_SIZE - len, "%u", c2h_timer_cnt[0]);
 	for (i = 1; i < QDMA_GLOBAL_CSR_ARRAY_SZ; i++)
-		len += sprintf(buf + len, " %hhu", c2h_timer_cnt[i]);
-	len += sprintf(buf + len, "%s", "\n\0");
+		len += scnprintf(buf + len,
+					PAGE_SIZE - len,
+					" %u", c2h_timer_cnt[i]);
+	len += scnprintf(buf + len, PAGE_SIZE - len, "%s", "\n\0");
 
 	return len;
 }
@@ -602,7 +608,7 @@ static ssize_t set_c2h_timer_cnt(struct device *dev,
 		if (err < 0)
 			goto input_err;
 
-		if (c2h_timer_cnt[i] < 0 || c2h_timer_cnt[i] > 255) {
+		if (c2h_timer_cnt[i] > 255) {
 			pr_warn("timer cnt at index %d is %d - out of range [0-255]\n",
 				i, c2h_timer_cnt[i]);
 			err = -EINVAL;
@@ -657,10 +663,13 @@ static ssize_t show_c2h_cnt_th(struct device *dev,
 
 	qdma_get_cnt_thresh(xpdev->dev_hndl, c2h_cnt_th);
 
-	len += sprintf(buf + len, "%hhu", c2h_cnt_th[0]);
+	len += scnprintf(buf + len,
+				PAGE_SIZE - len, "%u", c2h_cnt_th[0]);
 	for (i = 1; i < QDMA_GLOBAL_CSR_ARRAY_SZ; i++)
-		len += sprintf(buf + len, " %hhu", c2h_cnt_th[i]);
-	len += sprintf(buf + len, "%s", "\n\0");
+		len += scnprintf(buf + len,
+				PAGE_SIZE - len, " %u", c2h_cnt_th[i]);
+	len += scnprintf(buf + len,
+				PAGE_SIZE - len, "%s", "\n\0");
 
 	return len;
 }
@@ -715,7 +724,7 @@ static ssize_t set_c2h_cnt_th(struct device *dev,
 		if (err < 0)
 			goto input_err;
 
-		if (c2h_cnt_th[i] < 0 || c2h_cnt_th[i] > 255) {
+		if (c2h_cnt_th[i] > 255) {
 			pr_warn("counter threshold at index %d is %d - out of range [0-255]\n",
 				i, c2h_cnt_th[i]);
 			err = -EINVAL;
@@ -1105,10 +1114,10 @@ int xpdev_queue_delete(struct xlnx_pci_dev *xpdev, unsigned int qidx, u8 q_type,
 	if (q_type != Q_CMPT) {
 		spin_lock(&xpdev->cdev_lock);
 		qdata->xcdev->dir_init &= ~(1 << (q_type ? 1 : 0));
+		spin_unlock(&xpdev->cdev_lock);
 
 		if (!qdata->xcdev->dir_init)
 			qdma_cdev_destroy(qdata->xcdev);
-		spin_unlock(&xpdev->cdev_lock);
 	}
 
 	memset(qdata, 0, sizeof(*qdata));
@@ -1387,7 +1396,7 @@ static int xpdev_map_bar(struct xlnx_pci_dev *xpdev,
 {
 	int map_len;
 
-	/* map the user bar */
+	/* map the AXI Master Lite bar */
 	map_len = pci_resource_len(xpdev->pdev, (int)bar_num);
 	if (map_len > QDMA_MAX_BAR_LEN_MAPPED)
 		map_len = QDMA_MAX_BAR_LEN_MAPPED;
@@ -1423,11 +1432,11 @@ int qdma_device_read_user_register(struct xlnx_pci_dev *xpdev,
 	xdev = (struct xlnx_dma_dev *)(xpdev->dev_hndl);
 
 	if (xdev->conf.bar_num_user < 0) {
-		pr_err("User bar is not present\n");
+		pr_err("AXI Master Lite bar is not present\n");
 		return -EINVAL;
 	}
 
-	/* map the user bar */
+	/* map the AXI Master Lite bar */
 	rv = xpdev_map_bar(xpdev, &xpdev->user_bar_regs,
 			xdev->conf.bar_num_user);
 	if (rv < 0)
@@ -1435,7 +1444,7 @@ int qdma_device_read_user_register(struct xlnx_pci_dev *xpdev,
 
 	*value = readl(xpdev->user_bar_regs + reg_addr);
 
-	/* unmap the user bar after accessing it */
+	/* unmap the AXI Master Lite bar after accessing it */
 	xpdev_unmap_bar(xpdev, &xpdev->user_bar_regs);
 
 	return 0;
@@ -1453,11 +1462,11 @@ int qdma_device_write_user_register(struct xlnx_pci_dev *xpdev,
 	xdev = (struct xlnx_dma_dev *)(xpdev->dev_hndl);
 
 	if (xdev->conf.bar_num_user < 0) {
-		pr_err("User bar is not present\n");
+		pr_err("AXI Master Lite bar is not present\n");
 		return -EINVAL;
 	}
 
-	/* map the user bar */
+	/* map the AXI Master Lite bar */
 	rv = xpdev_map_bar(xpdev, &xpdev->user_bar_regs,
 			xdev->conf.bar_num_user);
 	if (rv < 0)
@@ -1466,7 +1475,7 @@ int qdma_device_write_user_register(struct xlnx_pci_dev *xpdev,
 
 	writel(value, xpdev->user_bar_regs + reg_addr);
 
-	/* unmap the user bar after accessing it */
+	/* unmap the AXI Master Lite bar after accessing it */
 	xpdev_unmap_bar(xpdev, &xpdev->user_bar_regs);
 
 	return 0;
@@ -1484,11 +1493,11 @@ int qdma_device_read_bypass_register(struct xlnx_pci_dev *xpdev,
 	xdev = (struct xlnx_dma_dev *)(xpdev->dev_hndl);
 
 	if (xdev->conf.bar_num_bypass < 0) {
-		pr_err("bypass bar is not present\n");
+		pr_err("AXI Bridge Master bar is not present\n");
 		return -EINVAL;
 	}
 
-	/* map the bypass bar */
+	/* map the AXI Bridge Master bar */
 	rv = xpdev_map_bar(xpdev, &xpdev->bypass_bar_regs,
 			xdev->conf.bar_num_bypass);
 	if (rv < 0)
@@ -1496,7 +1505,7 @@ int qdma_device_read_bypass_register(struct xlnx_pci_dev *xpdev,
 
 	*value = readl(xpdev->bypass_bar_regs + reg_addr);
 
-	/* unmap the bypass bar after accessing it */
+	/* unmap the AXI Bridge Master bar after accessing it */
 	xpdev_unmap_bar(xpdev, &xpdev->bypass_bar_regs);
 
 	return 0;
@@ -1514,11 +1523,11 @@ int qdma_device_write_bypass_register(struct xlnx_pci_dev *xpdev,
 	xdev = (struct xlnx_dma_dev *)(xpdev->dev_hndl);
 
 	if (xdev->conf.bar_num_bypass < 0) {
-		pr_err("bypass bar is not present\n");
+		pr_err("AXI Bridge Master bar is not present\n");
 		return -EINVAL;
 	}
 
-	/* map the bypass bar */
+	/* map the AXI Bridge Master bar */
 	rv = xpdev_map_bar(xpdev, &xpdev->bypass_bar_regs,
 			xdev->conf.bar_num_bypass);
 	if (rv < 0)
@@ -1526,7 +1535,7 @@ int qdma_device_write_bypass_register(struct xlnx_pci_dev *xpdev,
 
 	writel(value, xpdev->bypass_bar_regs + reg_addr);
 
-	/* unmap the bypass bar after accessing it */
+	/* unmap the AXI Bridge Master bar after accessing it */
 	xpdev_unmap_bar(xpdev, &xpdev->bypass_bar_regs);
 
 	return 0;
@@ -1635,7 +1644,6 @@ static void xpdev_device_cleanup(struct xlnx_pci_dev *xpdev)
 	struct xlnx_qdata *qdata = xpdev->qdata;
 	struct xlnx_qdata *qmax = qdata + (xpdev->qmax * 2); /* h2c and c2h */
 
-	spin_lock(&xpdev->cdev_lock);
 	for (; qdata != qmax; qdata++) {
 		if (qdata->xcdev) {
 			/* if either h2c(1) or c2h(2) bit set, but not both */
@@ -1643,12 +1651,13 @@ static void xpdev_device_cleanup(struct xlnx_pci_dev *xpdev)
 				qdata->xcdev->dir_init == 2) {
 				qdma_cdev_destroy(qdata->xcdev);
 			} else { /* both bits are set so remove one */
+				spin_lock(&xpdev->cdev_lock);
 				qdata->xcdev->dir_init >>= 1;
+				spin_unlock(&xpdev->cdev_lock);
 			}
 		}
 		memset(qdata, 0, sizeof(*qdata));
 	}
-	spin_unlock(&xpdev->cdev_lock);
 }
 
 static void remove_one(struct pci_dev *pdev)
@@ -1760,7 +1769,19 @@ static void qdma_error_resume(struct pci_dev *pdev)
 	}
 
 	pr_info("dev 0x%p,0x%p.\n", pdev, xpdev);
+#ifdef RHEL_RELEASE_VERSION
+#if RHEL_RELEASE_VERSION(8, 3) > RHEL_RELEASE_CODE
 	pci_cleanup_aer_uncorrect_error_status(pdev);
+#else
+	pci_aer_clear_nonfatal_status(pdev);
+#endif
+#else
+#if KERNEL_VERSION(5, 7, 0) <= LINUX_VERSION_CODE
+	pci_aer_clear_nonfatal_status(pdev);
+#else
+	pci_cleanup_aer_uncorrect_error_status(pdev);
+#endif
+#endif
 }
 
 
@@ -1789,14 +1810,18 @@ static void qdma_reset_prepare(struct pci_dev *pdev)
 	qdma_device_offline(pdev, xpdev->dev_hndl, XDEV_FLR_ACTIVE);
 
 	/* FLR setting is required for Versal Hard IP */
-	if (xdev->version_info.ip_type == QDMA_VERSAL_HARD_IP)
+	if ((xdev->version_info.ip_type == QDMA_VERSAL_HARD_IP) &&
+			(xdev->version_info.device_type ==
+			 QDMA_DEVICE_VERSAL_CPM4))
 		qdma_device_flr_quirk_set(pdev, xpdev->dev_hndl);
 	xpdev_queue_delete_all(xpdev);
 	xpdev_device_cleanup(xpdev);
 	xdev->conf.qsets_max = 0;
 	xdev->conf.qsets_base = -1;
 
-	if (xdev->version_info.ip_type == QDMA_VERSAL_HARD_IP)
+	if ((xdev->version_info.ip_type == QDMA_VERSAL_HARD_IP) &&
+			(xdev->version_info.device_type ==
+			 QDMA_DEVICE_VERSAL_CPM4))
 		qdma_device_flr_quirk_check(pdev, xpdev->dev_hndl);
 }
 
@@ -1824,14 +1849,18 @@ static void qdma_reset_notify(struct pci_dev *pdev, bool prepare)
 	if (prepare) {
 		qdma_device_offline(pdev, xpdev->dev_hndl, XDEV_FLR_ACTIVE);
 		/* FLR setting is not required for 2018.3 IP */
-		if (xdev->version_info.ip_type == QDMA_VERSAL_HARD_IP)
+		if ((xdev->version_info.ip_type == QDMA_VERSAL_HARD_IP) &&
+				(xdev->version_info.device_type ==
+				 QDMA_DEVICE_VERSAL_CPM4))
 			qdma_device_flr_quirk_set(pdev, xpdev->dev_hndl);
 		xpdev_queue_delete_all(xpdev);
 		xpdev_device_cleanup(xpdev);
 		xdev->conf.qsets_max = 0;
 		xdev->conf.qsets_base = -1;
 
-		if (xdev->version_info.ip_type == QDMA_VERSAL_HARD_IP)
+		if ((xdev->version_info.ip_type == QDMA_VERSAL_HARD_IP) &&
+				(xdev->version_info.device_type ==
+				 QDMA_DEVICE_VERSAL_CPM4))
 			qdma_device_flr_quirk_check(pdev, xpdev->dev_hndl);
 	} else
 		qdma_device_online(pdev, xpdev->dev_hndl, XDEV_FLR_ACTIVE);

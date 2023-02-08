@@ -1,5 +1,6 @@
 /*
- * Copyright(c) 2019-2020 Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2019-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -14,9 +15,12 @@
  * the file called "COPYING".
  */
 
-#ifndef QDMA_ACCESS_ERRORS_H_
-#define QDMA_ACCESS_ERRORS_H_
+#ifndef __QDMA_ACCESS_ERRORS_H_
+#define __QDMA_ACCESS_ERRORS_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 /**
  * DOC: QDMA common library error codes definitions
@@ -62,4 +66,8 @@ enum qdma_access_error_codes {
 	QDMA_ERR_MBOX_ALL_ZERO_MSG,			/* 25 */
 };
 
-#endif /* QDMA_ACCESS_H_ */
+#ifdef __cplusplus
+}
+#endif
+
+#endif /* __QDMA_ACCESS_ERRORS_H_ */

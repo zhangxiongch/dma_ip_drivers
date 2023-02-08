@@ -1,5 +1,6 @@
 /*
- * Copyright(c) 2019-2020 Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2019-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -15,8 +16,6 @@
  */
 
 #include "qdma_mbox_protocol.h"
-#include "qdma_platform.h"
-#include "qdma_resource_mgmt.h"
 
 /** mailbox function status */
 #define MBOX_FN_STATUS			0x0
@@ -381,9 +380,9 @@ static inline void mbox_pf_hw_clear_func_ack(void *dev_hndl, uint16_t func_id)
 			(1 << bit));
 }
 
-static void qdma_mbox_memcpy(void *to, void *from, uint32_t size)
+static void qdma_mbox_memcpy(void *to, void *from, uint8_t size)
 {
-	uint32_t i;
+	uint8_t i;
 	uint8_t *_to = (uint8_t *)to;
 	uint8_t *_from = (uint8_t *)from;
 
@@ -391,9 +390,9 @@ static void qdma_mbox_memcpy(void *to, void *from, uint32_t size)
 		_to[i] = _from[i];
 }
 
-static void qdma_mbox_memset(void *to, uint8_t val, uint32_t size)
+static void qdma_mbox_memset(void *to, uint8_t val, uint8_t size)
 {
-	uint32_t i;
+	uint8_t i;
 	uint8_t *_to = (uint8_t *)to;
 
 	for (i = 0; i < size; i++)
@@ -924,8 +923,8 @@ static int mbox_write_queue_contexts(void *dev_hndl, uint8_t dma_device_index,
 	return QDMA_SUCCESS;
 }
 
-static int mbox_read_queue_contexts(void *dev_hndl, uint16_t qid_hw,
-			uint8_t st, uint8_t c2h,
+static int mbox_read_queue_contexts(void *dev_hndl, uint16_t func_id,
+			uint16_t qid_hw, uint8_t st, uint8_t c2h,
 			enum mbox_cmpt_ctxt_type cmpt_ctxt_type,
 			struct qdma_descq_context *ctxt)
 {
@@ -954,6 +953,14 @@ static int mbox_read_queue_contexts(void *dev_hndl, uint16_t qid_hw,
 				      QDMA_HW_ACCESS_READ);
 	if (rv < 0) {
 		qdma_log_error("%s: read credit ctxt, err:%d\n",
+					__func__, rv);
+		return rv;
+	}
+
+	rv = hw->qdma_fmap_conf(dev_hndl, func_id, &ctxt->fmap,
+				      QDMA_HW_ACCESS_READ);
+	if (rv < 0) {
+		qdma_log_error("%s: read fmap ctxt, err:%d\n",
 					__func__, rv);
 		return rv;
 	}
@@ -1079,7 +1086,7 @@ int qdma_mbox_pf_rcv_msg_handler(void *dev_hndl, uint8_t dma_device_index,
 	case MBOX_OP_CSR:
 	{
 		struct mbox_msg_csr *rsp_csr = &resp->csr;
-		struct qdma_dev_attributes *dev_cap;
+		struct qdma_dev_attributes dev_cap;
 
 		uint32_t ringsz[QDMA_GLOBAL_CSR_ARRAY_SZ] = {0};
 		uint32_t bufsz[QDMA_GLOBAL_CSR_ARRAY_SZ] = {0};
@@ -1093,9 +1100,9 @@ int qdma_mbox_pf_rcv_msg_handler(void *dev_hndl, uint8_t dma_device_index,
 		if (rv < 0)
 			goto exit_func;
 
-		qdma_get_device_attr(dev_hndl, &dev_cap);
+		hw->qdma_get_device_attributes(dev_hndl, &dev_cap);
 
-		if (dev_cap->st_en) {
+		if (dev_cap.st_en) {
 			rv = hw->qdma_global_csr_conf(dev_hndl, 0,
 				QDMA_GLOBAL_CSR_ARRAY_SZ, bufsz,
 				QDMA_CSR_BUF_SZ, QDMA_HW_ACCESS_READ);
@@ -1104,7 +1111,7 @@ int qdma_mbox_pf_rcv_msg_handler(void *dev_hndl, uint8_t dma_device_index,
 				goto exit_func;
 		}
 
-		if (dev_cap->st_en || dev_cap->mm_cmpt_en) {
+		if (dev_cap.st_en || dev_cap.mm_cmpt_en) {
 			rv = hw->qdma_global_csr_conf(dev_hndl, 0,
 				QDMA_GLOBAL_CSR_ARRAY_SZ, tmr_th,
 				QDMA_CSR_TIMER_CNT, QDMA_HW_ACCESS_READ);
@@ -1325,7 +1332,8 @@ int qdma_mbox_pf_rcv_msg_handler(void *dev_hndl, uint8_t dma_device_index,
 	{
 		struct mbox_msg_qctxt *qctxt = &rcv->qctxt;
 
-		rv = mbox_read_queue_contexts(dev_hndl, qctxt->qid_hw,
+		rv = mbox_read_queue_contexts(dev_hndl, hdr->src_func_id,
+						qctxt->qid_hw,
 						qctxt->st,
 						qctxt->c2h,
 						qctxt->cmpt_ctxt_type,

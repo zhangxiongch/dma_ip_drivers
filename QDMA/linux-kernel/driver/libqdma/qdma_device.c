@@ -1,8 +1,8 @@
 /*
  * This file is part of the Xilinx DMA IP Core driver for Linux
  *
- * Copyright (c) 2017-2020,  Xilinx, Inc.
- * All rights reserved.
+ * Copyright (c) 2017-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -174,7 +174,8 @@ int qdma_device_interrupt_setup(struct xlnx_dma_dev *xdev)
 			return -EINVAL;
 		}
 
-		rv = xdev->hw.qdma_hw_error_enable(xdev, QDMA_ERRS_ALL);
+		rv = xdev->hw.qdma_hw_error_enable(xdev,
+				xdev->hw.qdma_max_errors);
 		if (rv < 0) {
 			pr_err("Failed to enable error interrupt, err = %d",
 					rv);
@@ -203,8 +204,6 @@ int qdma_device_prep_q_resource(struct xlnx_dma_dev *xdev)
 	struct qdma_dev *qdev = xdev_2_qdev(xdev);
 	int rv = 0;
 
-	spin_lock(&qdev->lock);
-
 	if (qdev->init_qrange)
 		goto done;
 
@@ -216,8 +215,6 @@ int qdma_device_prep_q_resource(struct xlnx_dma_dev *xdev)
 	if (rv < 0)
 		goto done;
 done:
-	spin_unlock(&qdev->lock);
-
 	return rv;
 }
 
@@ -235,8 +232,8 @@ int qdma_device_init(struct xlnx_dma_dev *xdev)
 
 	memset(&fmap, 0, sizeof(struct qdma_fmap_cfg));
 
-	qdev = kzalloc(sizeof(struct qdma_dev) +
-			sizeof(struct qdma_descq) * qmax * 3, GFP_KERNEL);
+	qdev = kzalloc(sizeof(struct qdma_dev), GFP_KERNEL);
+
 	if (!qdev) {
 		pr_err("dev %s qmax %d OOM.\n",
 			dev_name(&xdev->conf.pdev->dev), qmax);
@@ -256,10 +253,10 @@ int qdma_device_init(struct xlnx_dma_dev *xdev)
 	}
 #endif
 
-	descq = (struct qdma_descq *)(qdev + 1);
-	qdev->h2c_descq = descq;
-	qdev->c2h_descq = descq + qmax;
-	qdev->cmpt_descq = descq + (2 * qmax);
+	qdev->h2c_descq = kmalloc(sizeof(struct qdma_descq) * qmax, GFP_KERNEL);
+	qdev->c2h_descq = kmalloc(sizeof(struct qdma_descq) * qmax, GFP_KERNEL);
+	qdev->cmpt_descq = kmalloc(sizeof(struct qdma_descq) * qmax,
+					GFP_KERNEL);
 
 	qdev->qmax = qmax;
 	qdev->init_qrange = 0;
@@ -308,17 +305,6 @@ void qdma_device_cleanup(struct xlnx_dma_dev *xdev)
 					i + qdev->qmax, buf, QDMA_BUF_LEN);
 	}
 
-#ifndef __QDMA_VF__
-	if (xdev->func_id == 0) {
-		for (i = 0; i < xdev->dev_cap.mm_channel_max; i++) {
-			xdev->hw.qdma_mm_channel_conf(xdev, i,
-						      DMA_TO_DEVICE, 0);
-			xdev->hw.qdma_mm_channel_conf(xdev, i,
-						      DMA_FROM_DEVICE, 0);
-		}
-	}
-#endif
-
 	for (i = 0, descq = qdev->h2c_descq; i < qdev->qmax; i++, descq++) {
 		if (descq->q_state == Q_STATE_ENABLED)
 			qdma_queue_remove((unsigned long int)xdev,
@@ -330,6 +316,10 @@ void qdma_device_cleanup(struct xlnx_dma_dev *xdev)
 			qdma_queue_remove((unsigned long int)xdev,
 					  i + qdev->qmax, buf, QDMA_BUF_LEN);
 	}
+
+	kfree(qdev->h2c_descq);
+	kfree(qdev->c2h_descq);
+	kfree(qdev->cmpt_descq);
 	xdev->dev_priv = NULL;
 	kfree(qdev);
 }

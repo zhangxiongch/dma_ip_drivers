@@ -1,7 +1,8 @@
 /*-
  * BSD LICENSE
  *
- * Copyright(c) 2017-2020 Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2017-2022 Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Advanced Micro Devices, Inc. All rights reserved.
  *
  * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions
@@ -236,6 +237,10 @@ static int reclaim_tx_mbuf(struct qdma_tx_queue *txq,
 
 	id = txq->tx_fl_tail;
 	fl_desc = (int)cidx - id;
+
+	if (fl_desc == 0)
+		return 0;
+
 	if (fl_desc < 0)
 		fl_desc += (txq->nb_tx_desc - 1);
 
@@ -243,7 +248,8 @@ static int reclaim_tx_mbuf(struct qdma_tx_queue *txq,
 		fl_desc = free_cnt;
 
 	if ((id + fl_desc) < (txq->nb_tx_desc - 1)) {
-		for (count = 0; count < fl_desc; count++) {
+		for (count = 0; count < ((uint16_t)fl_desc & 0xFFFF);
+				count++) {
 			rte_pktmbuf_free(txq->sw_ring[id]);
 			txq->sw_ring[id++] = NULL;
 		}
@@ -255,7 +261,8 @@ static int reclaim_tx_mbuf(struct qdma_tx_queue *txq,
 		}
 
 		id -= (txq->nb_tx_desc - 1);
-		for (count = 0; count < fl_desc; count++) {
+		for (count = 0; count < ((uint16_t)fl_desc & 0xFFFF);
+				count++) {
 			rte_pktmbuf_free(txq->sw_ring[id]);
 			txq->sw_ring[id++] = NULL;
 		}
@@ -282,7 +289,7 @@ static uint16_t qdma_xmit_64B_desc_bypass(struct qdma_tx_queue *txq,
 		memset(&tx_ring_st_bypass[id * (txq->bypass_desc_sz)],
 				((id  % 255) + 1), txq->bypass_desc_sz);
 
-		sprintf(fln, "q_%u_%s", txq->queue_id,
+		snprintf(fln, sizeof(fln), "q_%u_%s", txq->queue_id,
 				"h2c_desc_data.txt");
 		ofd = open(fln, O_RDWR | O_CREAT | O_APPEND | O_SYNC,
 				0666);
@@ -342,7 +349,7 @@ void qdma_get_device_info(void *queue_hndl,
 	*ip_type = (enum qdma_ip_type)qdma_dev->ip_type;
 }
 
-uint32_t get_mm_c2h_ep_addr(void *queue_hndl)
+uint64_t get_mm_c2h_ep_addr(void *queue_hndl)
 {
 	struct qdma_rx_queue *rxq = (struct qdma_rx_queue *)queue_hndl;
 
@@ -393,7 +400,7 @@ struct qdma_ul_mm_desc *get_mm_h2c_desc(void *queue_hndl)
 	return desc;
 }
 
-uint32_t get_mm_h2c_ep_addr(void *queue_hndl)
+uint64_t get_mm_h2c_ep_addr(void *queue_hndl)
 {
 	struct qdma_tx_queue *txq = (struct qdma_tx_queue *)queue_hndl;
 
@@ -405,6 +412,9 @@ static void adjust_c2h_cntr_avgs(struct qdma_rx_queue *rxq)
 {
 	int i;
 	struct qdma_pci_dev *qdma_dev = rxq->dev->data->dev_private;
+
+	if (rxq->sorted_c2h_cntr_idx < 0)
+		return;
 
 	rxq->pend_pkt_moving_avg =
 		qdma_dev->g_c2h_cnt_th[rxq->cmpt_cidx_info.counter_idx];
@@ -627,7 +637,7 @@ static int process_cmpt_ring(struct qdma_rx_queue *rxq,
 	return 0;
 }
 
-static uint32_t rx_queue_count(void *rx_queue)
+uint32_t rx_queue_count(void *rx_queue)
 {
 	struct qdma_rx_queue *rxq = rx_queue;
 	struct wb_status *wb_status;
@@ -677,24 +687,6 @@ static uint32_t rx_queue_count(void *rx_queue)
 	PMD_DRV_LOG(DEBUG, "%s: nb_desc_used = %d",
 			__func__, nb_desc_used);
 	return nb_desc_used;
-}
-
-/**
- * DPDK callback to get the number of used descriptors of a rx queue.
- *
- * @param dev
- *   Pointer to Ethernet device structure.
- * @param rx_queue_id
- *   The RX queue on the Ethernet device for which information will be
- *   retrieved
- *
- * @return
- *   The number of used descriptors in the specific queue.
- */
-uint32_t
-qdma_dev_rx_queue_count(struct rte_eth_dev *dev, uint16_t rx_queue_id)
-{
-	return rx_queue_count(dev->data->rx_queues[rx_queue_id]);
 }
 
 /**
@@ -756,11 +748,13 @@ static struct rte_mbuf *prepare_segmented_packet(struct qdma_rx_queue *rxq,
 	struct rte_mbuf *first_seg = NULL;
 	struct rte_mbuf *last_seg = NULL;
 	uint16_t id = *tail;
+	uint16_t length;
 	uint16_t rx_buff_size = rxq->rx_buff_size;
 
 	do {
 		mb = rxq->sw_ring[id];
 		rxq->sw_ring[id++] = NULL;
+		length = pkt_length;
 
 		if (unlikely(id >= (rxq->nb_rx_desc - 1)))
 			id -= (rxq->nb_rx_desc - 1);
@@ -776,7 +770,7 @@ static struct rte_mbuf *prepare_segmented_packet(struct qdma_rx_queue *rxq,
 		if (first_seg == NULL) {
 			first_seg = mb;
 			first_seg->nb_segs = 1;
-			first_seg->pkt_len = pkt_length;
+			first_seg->pkt_len = length;
 			first_seg->packet_type = 0;
 			first_seg->ol_flags = 0;
 			first_seg->port = rxq->port_id;
@@ -917,8 +911,12 @@ static uint16_t prepare_packets_v(struct qdma_rx_queue *rxq,
 			pkt_mb2);
 
 			/* Accumulate packet length counter */
-			pktlen = _mm_add_epi32(pktlen, pkt_len[0]);
-			pktlen = _mm_add_epi32(pktlen, pkt_len[1]);
+			pktlen = _mm_add_epi64(pktlen,
+				_mm_set_epi16(0, 0, 0, 0,
+					0, 0, 0, pktlen1));
+			pktlen = _mm_add_epi64(pktlen,
+				_mm_set_epi16(0, 0, 0, 0,
+					0, 0, 0, pktlen2));
 
 			count_pkts += RTE_QDMA_DESCS_PER_LOOP;
 			id += RTE_QDMA_DESCS_PER_LOOP;
@@ -931,14 +929,18 @@ static uint16_t prepare_packets_v(struct qdma_rx_queue *rxq,
 				mb = prepare_segmented_packet(rxq,
 					pktlen1, &id);
 				rx_pkts[count_pkts++] = mb;
-				pktlen = _mm_add_epi32(pktlen, pkt_len[0]);
+				pktlen = _mm_add_epi64(pktlen,
+					_mm_set_epi16(0, 0, 0, 0,
+						0, 0, 0, pktlen1));
 			}
 
 			if (pktlen2) {
 				mb = prepare_segmented_packet(rxq,
 					pktlen2, &id);
 				rx_pkts[count_pkts++] = mb;
-				pktlen = _mm_add_epi32(pktlen, pkt_len[1]);
+				pktlen = _mm_add_epi64(pktlen,
+					_mm_set_epi16(0, 0, 0, 0,
+						0, 0, 0, pktlen2));
 			}
 		}
 	}
@@ -952,7 +954,6 @@ static uint16_t prepare_packets_v(struct qdma_rx_queue *rxq,
 		mb = prepare_single_packet(rxq, count);
 		if (mb)
 			rx_pkts[count_pkts++] = mb;
-		count++;
 	}
 
 	return count_pkts;
@@ -1027,7 +1028,7 @@ static int rearm_c2h_ring(struct qdma_rx_queue *rxq, uint16_t num_desc)
 	__m128i head_room = _mm_set_epi64x(RTE_PKTMBUF_HEADROOM,
 			RTE_PKTMBUF_HEADROOM);
 
-	for (mbuf_index = 0; mbuf_index < rearm_cnt;
+	for (mbuf_index = 0; mbuf_index < ((uint16_t)rearm_cnt  & 0xFFFF);
 			mbuf_index += RTE_QDMA_DESCS_PER_LOOP,
 			id += RTE_QDMA_DESCS_PER_LOOP) {
 		__m128i vaddr0, vaddr1;
@@ -1058,7 +1059,7 @@ static int rearm_c2h_ring(struct qdma_rx_queue *rxq, uint16_t num_desc)
 
 		/* rearm descriptor */
 		rx_ring_st[id].dst_addr =
-				(uint64_t)mb->buf_physaddr +
+				(uint64_t)mb->buf_iova +
 					RTE_PKTMBUF_HEADROOM;
 		id++;
 	}
@@ -1070,7 +1071,7 @@ static int rearm_c2h_ring(struct qdma_rx_queue *rxq, uint16_t num_desc)
 
 		/* rearm descriptor */
 		rx_ring_st[id].dst_addr =
-				(uint64_t)mb->buf_physaddr +
+				(uint64_t)mb->buf_iova +
 					RTE_PKTMBUF_HEADROOM;
 	}
 #endif //QDMA_RX_VEC_X86_64
@@ -1099,14 +1100,15 @@ static int rearm_c2h_ring(struct qdma_rx_queue *rxq, uint16_t num_desc)
 			return -1;
 		}
 
-		for (mbuf_index = 0; mbuf_index < rearm_descs;
+		for (mbuf_index = 0;
+				mbuf_index < ((uint16_t)rearm_descs & 0xFFFF);
 				mbuf_index++, id++) {
 			mb = rxq->sw_ring[id];
 			mb->data_off = RTE_PKTMBUF_HEADROOM;
 
 			/* rearm descriptor */
 			rx_ring_st[id].dst_addr =
-					(uint64_t)mb->buf_physaddr +
+					(uint64_t)mb->buf_iova +
 						RTE_PKTMBUF_HEADROOM;
 		}
 	}
@@ -1451,6 +1453,12 @@ uint16_t qdma_xmit_pkts_st(struct qdma_tx_queue *txq, struct rte_mbuf **tx_pkts,
 #endif
 
 	id = txq->q_pidx_info.pidx;
+
+	/* Make sure reads to Tx ring are synchronized before
+	 * accessing the status descriptor.
+	 */
+	rte_rmb();
+
 	cidx = txq->wb_status->cidx;
 	PMD_DRV_LOG(DEBUG, "Xmit start on tx queue-id:%d, tail index:%d\n",
 			txq->queue_id, id);
@@ -1499,11 +1507,6 @@ uint16_t qdma_xmit_pkts_st(struct qdma_tx_queue *txq, struct rte_mbuf **tx_pkts,
 
 	txq->stats.pkts += count;
 	txq->stats.bytes += pkt_len;
-
-	/* Make sure writes to the H2C descriptors are synchronized
-	 * before updating PIDX
-	 */
-	rte_wmb();
 
 #if (MIN_TX_PIDX_UPDATE_THRESHOLD > 1)
 	rte_spinlock_lock(&txq->pidx_update_lock);
@@ -1589,7 +1592,9 @@ uint16_t qdma_xmit_pkts_mm(struct qdma_tx_queue *txq, struct rte_mbuf **tx_pkts,
 		PMD_DRV_LOG(DEBUG, "xmit number of bytes:%ld, count:%d ",
 				len, count);
 
+#ifndef TANDEM_BOOT_SUPPORTED
 		txq->ep_addr = (txq->ep_addr + len) % DMA_BRAM_SIZE;
+#endif
 		id = txq->q_pidx_info.pidx;
 	}
 
@@ -1622,7 +1627,7 @@ uint16_t qdma_xmit_pkts_mm(struct qdma_tx_queue *txq, struct rte_mbuf **tx_pkts,
  * DPDK callback for transmitting packets in burst.
  *
  * @param tx_queue
- G*   Generic pointer to TX queue structure.
+ *   Generic pointer to TX queue structure.
  * @param[in] tx_pkts
  *   Packets to transmit.
  * @param nb_pkts

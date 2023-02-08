@@ -2,8 +2,8 @@
  * This file is part of the QDMA userspace application
  * to enable the user to execute the QDMA functionality
  *
- * Copyright (c) 2018-2020,  Xilinx, Inc.
- * All rights reserved.
+ * Copyright (c) 2018-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is licensed under BSD-style license (found in the
  * LICENSE file in the root directory of this source tree)
@@ -60,7 +60,6 @@ static void usage(const char *name)
 
 	fprintf(stdout, "  -%c (--%s) config file that has configration for IO\n",
 		long_opts[i].val, long_opts[i].name);
-	i++;
 }
 
 static unsigned int num_trailing_blanks(char *word)
@@ -146,6 +145,13 @@ enum q_dir {
 	Q_DIRS
 };
 
+
+enum mm_channel_ctrl {
+	MM_CHANNEL_0, /*All Qs are assigned to channel 0*/
+	MM_CHANNEL_1, /*All Qs are assigned to channel 1*/
+	MM_CHANNEL_INTERLEAVE /*Odd queues are assigned to ch 1 and even Qs are assigned to channel 0*/
+};
+
 #define THREADS_SET_CPU_AFFINITY 0
 
 struct io_info {
@@ -181,6 +187,10 @@ struct io_info {
 	unsigned int pipe_flow_id;
 	unsigned int pipe_slr_id;
 	unsigned int pipe_tdest;
+	unsigned int mm_chnl;
+	int keyhole_en;
+	unsigned int aperture_sz;
+	unsigned long int offset;
 #ifdef DEBUG
 	unsigned long long total_nodes;
 	unsigned long long freed_nodes;
@@ -204,10 +214,22 @@ struct list_head {
 
 static unsigned int *io_exit = 0;
 int io_exit_id;
+static unsigned int mm_chnl = 0;
 static unsigned int force_exit = 0;
 static unsigned int num_q = 0;
 static unsigned int pkt_sz = 0;
 static unsigned int num_pkts;
+static int keyhole_en = 0;
+static unsigned int aperture_sz = 0;
+/* For MM Channel =0 or 1 , offset is used for both MM Channels */
+static unsigned long int offset_ch0 = 0;
+/*In MM Channel interleaving offset_ch1 is the offset used for Channel 1*/
+static unsigned long int offset_ch1 = 0;
+static int offset_q_en= 0;
+static unsigned long int h2c_q_offset_intvl = 0;
+static unsigned long int c2h_q_offset_intvl = 0;
+static unsigned long int h2c_q_start_offset= 0;
+static unsigned long int c2h_q_start_offset= 0;
 static unsigned int tsecs = 0;
 struct io_info *info = NULL;
 static char cfg_name[20];
@@ -269,6 +291,26 @@ static int arg_read_int(char *s, uint32_t *v)
     return 0;
 }
 
+static int arg_read_long_uint(char *s, uint64_t *v)
+{
+    char *p = NULL;
+    *v = strtoull(s, &p, 0);
+    if (*p && (*p != '\n') && !isblank(*p)) {
+	printf("Error:something not right%s %s %s",s, p, isblank(*p)? "true": "false");
+        return -EINVAL;
+    }
+    return 0;
+}
+
+static int update_q_off(struct io_info *info)
+{
+	if (info->dir == Q_DIR_H2C) {
+		info->offset += h2c_q_start_offset + (info->qid * h2c_q_offset_intvl);
+	} else {
+		info->offset += c2h_q_start_offset + (info->qid * c2h_q_offset_intvl);
+	}
+}
+
 static int arg_read_int_array(char *s, unsigned int *v, unsigned int max_arr_size)
 {
     unsigned int slen = strlen(s);
@@ -326,7 +368,7 @@ static int get_array_len(char *s)
 
 static void dump_thrd_info(struct io_info *_info) {
 
-	printf("q_name = %s\n", info->q_name);
+	printf("q_name = %s\n", _info->q_name);
 	printf("dir = %d\n", _info->dir);
 	printf("mode = %d\n", _info->mode);
 	printf("idx_cnt = %u\n", _info->idx_cnt);
@@ -339,6 +381,7 @@ static void dump_thrd_info(struct io_info *_info) {
 	printf("q_ctrl = %u\n", _info->q_ctrl);
 	printf("q_added = %u\n", _info->q_added);
 	printf("q_started = %u\n", _info->q_started);
+	printf("offset = 0x%lx\n", _info->offset);
 	if (stm_mode) {
 		printf("pipe_gl_max = %u\n", _info->pipe_gl_max);
 		printf("pipe_flow_id = %u\n", _info->pipe_flow_id);
@@ -616,6 +659,10 @@ static void create_thread_info(void)
 					_info[base].q_ctrl = q_ctrl;
 					_info[base].fd = last_fd;
 					_info[base].pkt_burst = num_pkts;
+					if(mm_chnl == MM_CHANNEL_INTERLEAVE)
+						_info[base].mm_chnl = _info[base].qid % 2;
+					else
+						_info[base].mm_chnl = mm_chnl;
 					_info[base].pkt_sz = pkt_sz;
 					if ((_info[base].mode == Q_MODE_ST) &&
 							(stm_mode)) {
@@ -625,6 +672,17 @@ static void create_thread_info(void)
 						_info[base].pipe_slr_id = pipe_slr_id_lst[(k*num_q) + i];
 						_info[base].pipe_tdest = pipe_tdest_lst[(k*num_q) + i];
 					}
+
+					if (_info[base].mode == Q_MODE_MM &&
+							keyhole_en) {
+						_info[base].aperture_sz = aperture_sz;
+					}
+					if(mm_chnl == MM_CHANNEL_INTERLEAVE && _info[base].mm_chnl )
+						_info[base].offset = offset_ch1;
+					else
+						_info[base].offset = offset_ch0;
+					if(offset_q_en)
+						update_q_off(&_info[base]);
 #if THREADS_SET_CPU_AFFINITY
 					_info[base].cpu = h2c_cpu;
 #endif
@@ -650,6 +708,17 @@ static void create_thread_info(void)
 					_info[base].qid = q_start + i;
 					_info[base].q_ctrl = q_ctrl;
 					_info[base].pkt_burst = num_pkts;
+					if(mm_chnl == MM_CHANNEL_INTERLEAVE)
+						_info[base].mm_chnl = _info[base].qid % 2;
+					else
+						_info[base].mm_chnl = mm_chnl;
+					if(mm_chnl == MM_CHANNEL_INTERLEAVE && _info[base].mm_chnl )
+						_info[base].offset = offset_ch1;
+					else
+						_info[base].offset = offset_ch0;
+					if(offset_q_en)
+						update_q_off(&_info[base]);
+
 					_info[base].pkt_sz = pkt_sz;
 #if THREADS_SET_CPU_AFFINITY
 					_info[base].cpu = c2h_cpu;
@@ -831,12 +900,63 @@ static void parse_config_file(const char *cfg_fname)
 				printf("Error: Invalid pkt_sz:%s\n", value);
 				goto prase_cleanup;
 			}
+		} else if (!strncmp(config, "mm_chnl", 7)) {
+			if (arg_read_int(value, &mm_chnl)) {
+				printf("Error: Invalid mm_chnl:%s\n", value);
+				goto prase_cleanup;
+			}
 		} else if (!strncmp(config, "num_pkt", 7)) {
 			if (arg_read_int(value, &num_pkts)) {
 				printf("Error: Invalid num_pkt:%s\n", value);
 				goto prase_cleanup;
 			}
-		} else if (!strncmp(config, "no_memcpy", 9)) {
+		} else if (!strncmp(config, "aperture_sz", 11)) {
+			if (arg_read_int(value, &aperture_sz)) {
+				printf("Error: Invalid aperture size:%s\n", value);
+				goto prase_cleanup;
+			}
+		} else if (!strncmp(config, "offset_ch1", 10)) {
+			if (arg_read_long_uint(value, &offset_ch1)) {
+				printf("Error: Invalid aperture offset:%s\n", value);
+				goto prase_cleanup;
+			}
+		} else if (!strncmp(config, "offset_q_en", 11)) {
+			if (arg_read_int(value, &offset_q_en)) {
+				printf("Error: Invalid offset_q_en option:%s\n", value);
+				goto prase_cleanup;
+			}
+		} else if (!strncmp(config, "h2c_q_offset_intvl", 18)) {
+			if (arg_read_long_uint(value, &h2c_q_offset_intvl)) {
+				printf("Error: Invalid H2C q offset:%s\n", value);
+				goto prase_cleanup;
+			}
+		} else if (!strncmp(config, "c2h_q_offset_intvl", 18)) {
+			if (arg_read_long_uint(value, &c2h_q_offset_intvl)) {
+				printf("Error: Invalid C2H q offset:%s\n", value);
+				goto prase_cleanup;
+			}
+		} else if (!strncmp(config, "h2c_q_start_offset", 18)) {
+			if (arg_read_long_uint(value, &h2c_q_start_offset)) {
+				printf("Error: Invalid H2C q offset:%s\n", value);
+				goto prase_cleanup;
+			}
+		} else if (!strncmp(config, "c2h_q_start_offset", 18)) {
+			if (arg_read_long_uint(value, &c2h_q_start_offset)) {
+				printf("Error: Invalid H2C q offset:%s\n", value);
+				goto prase_cleanup;
+			}
+		} else if (!strncmp(config, "offset_ch0", 10)) {
+			if (arg_read_long_uint(value, &offset_ch0)) {
+				printf("Error: Invalid aperture offset:%s\n", value);
+				goto prase_cleanup;
+			}
+		} else if (!strncmp(config, "keyhole_en", 7)) {
+			if (arg_read_int(value, &keyhole_en)) {
+				printf("Error: Invalid keyhole option:%s\n", value);
+				goto prase_cleanup;
+			}
+		}
+		else if (!strncmp(config, "no_memcpy", 9)) {
 			if (arg_read_int(value, &no_memcpy)) {
 				printf("Error: Invalid no_memcpy:%s\n", value);
 				goto prase_cleanup;
@@ -946,6 +1066,7 @@ static void parse_config_file(const char *cfg_fname)
 
 		}
 	}
+
 	fclose(fp);
 	if (vf_perf == 0) {
 		dmactl_dev_prefix_str = pf_dmactl_prefix_str;
@@ -973,7 +1094,7 @@ static void parse_config_file(const char *cfg_fname)
 		printf("Could not open %s\n", rng_sz_path);
 		exit(1);
 	}
-	ret = read(rng_sz_fd, &rng_sz[1], 100);
+	ret = read(rng_sz_fd, &rng_sz[1], 99);
 	if (ret < 0) {
 		printf("Error: Could not read the file\n");
 		exit(1);
@@ -1168,7 +1289,7 @@ static int thread_exit_check(struct io_info *_info) {
 			usleep(100);
 			return 1;
 		} else {
-		    printf("Exit Check: tid =%d, req_sbmitted=%u req_completed=%u dir=%s, intime=%u loop_count=%d, \n",
+		    printf("Exit Check: tid =%u, req_sbmitted=%u req_completed=%u dir=%s, intime=%u loop_count=%d, \n",
 			   _info->thread_id, _info->num_req_submitted,
 			   _info->num_req_completed,_info->dir == Q_DIR_H2C ? "H2C": "C2H",
 			   _info->num_req_completed_in_time,  _info->exit_check_count);
@@ -1355,6 +1476,7 @@ static int qdma_prepare_q_start(struct xcmd_info *xcmd,
 		unsigned char is_vf, struct io_info *info)
 {
 	struct xcmd_q_parm *qparm;
+	unsigned int f_arg_set = 0;
 
 
 	if (!xcmd) {
@@ -1369,6 +1491,7 @@ static int qdma_prepare_q_start(struct xcmd_info *xcmd,
 	xcmd->log_msg_dump = xnl_dump_response;
 	qparm->idx = info->qid;
 	qparm->num_q = 1;
+	f_arg_set |= 1 << QPARM_IDX;
 	qparm->fetch_credit = Q_ENABLE_C2H_FETCH_CREDIT;
 
 	if (info->mode == Q_MODE_MM)
@@ -1377,7 +1500,7 @@ static int qdma_prepare_q_start(struct xcmd_info *xcmd,
 		qparm->flags |= XNL_F_QMODE_ST;
 	else
 		return -EINVAL;
-
+	f_arg_set |= 1 << QPARM_MODE;
 	if (info->dir == Q_DIR_H2C)
 		qparm->flags |= XNL_F_QDIR_H2C;
 	else if (info->dir == Q_DIR_C2H)
@@ -1385,15 +1508,19 @@ static int qdma_prepare_q_start(struct xcmd_info *xcmd,
 	else
 		return -EINVAL;
 
+	f_arg_set |= 1 << QPARM_DIR;
 	qparm->qrngsz_idx = info->idx_rngsz;
-
+	f_arg_set |= 1 << QPARM_RNGSZ_IDX;
 	if ((info->dir == Q_DIR_C2H) && (info->mode == Q_MODE_ST)) {
 		if (cmptsz)
 			qparm->cmpt_entry_size = info->cmptsz;
 		else
 			qparm->cmpt_entry_size = XNL_ST_C2H_CMPT_DESC_SIZE_8B;
+		f_arg_set |= 1 << QPARM_CMPTSZ;
 		qparm->cmpt_tmr_idx = info->idx_tmr;
+		f_arg_set |= 1 << QPARM_CMPT_TMR_IDX;
 		qparm->cmpt_cntr_idx = info->idx_cnt;
+		f_arg_set |= 1 << QPARM_CMPT_CNTR_IDX;
 
 		if (!strcmp(info->trig_mode, "every"))
 			qparm->cmpt_trig_mode = 1;
@@ -1411,15 +1538,29 @@ static int qdma_prepare_q_start(struct xcmd_info *xcmd,
 			printf("Error: unknown q trigmode %s.\n", info->trig_mode);
 			return -EINVAL;
 		}
-
+		f_arg_set |= 1 << QPARM_CMPT_TRIG_MODE;
 		if (pfetch_en)
 			qparm->flags |= XNL_F_PFETCH_EN;
+	}
+
+	if (info->mode == Q_MODE_MM) {
+		qparm->mm_channel = info->mm_chnl;
+		f_arg_set |= 1 <<QPARM_MM_CHANNEL;
+	}
+
+
+	if ((info->dir == Q_DIR_H2C) && (info->mode == Q_MODE_MM)) {
+		if (keyhole_en) {
+			qparm->aperture_sz = info->aperture_sz;
+			f_arg_set |= 1 << QPARM_KEYHOLE_EN;
+		}
 	}
 
 	qparm->flags |= (XNL_F_CMPL_STATUS_EN | XNL_F_CMPL_STATUS_ACC_EN |
 			XNL_F_CMPL_STATUS_PEND_CHK | XNL_F_CMPL_STATUS_DESC_EN |
 			XNL_F_FETCH_CREDIT);
 
+	qparm->sflags = f_arg_set;
 	return 0;
 }
 
@@ -1809,13 +1950,13 @@ static void *io_thread(void *argp)
 					       _info->fd,
 					       iov,
 					       iovcnt,
-					       0);
+					       _info->offset);
 			} else {
 				io_prep_preadv(io_list[0],
 					       _info->fd,
 					       iov,
 					       iovcnt,
-					       0);
+					       _info->offset);
 			}
 
 			ret = io_submit(node->ctxt, 1, io_list);

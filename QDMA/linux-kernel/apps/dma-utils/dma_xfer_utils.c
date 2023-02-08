@@ -2,8 +2,8 @@
  * This file is part of the QDMA userspace application
  * to enable the user to execute the QDMA functionality
  *
- * Copyright (c) 2018-2020,  Xilinx, Inc.
- * All rights reserved.
+ * Copyright (c) 2018-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is licensed under BSD-style license (found in the
  * LICENSE file in the root directory of this source tree)
@@ -25,8 +25,24 @@
  */
 
 #define RW_MAX_SIZE	0x7ffff000
+#define GB_DIV 1000000000
+#define MB_DIV 1000000
+#define KB_DIV 1000
+#define NSEC_DIV 1000000000
 
 int verbose = 0;
+
+void dump_throughput_result(uint64_t size, float result) {
+	printf("size=%lu ", size);
+	if (((long long)(result)/GB_DIV)) {
+		printf("Average BW = %f GB/sec\n", ((double)result/GB_DIV));
+	} else if (((long long)(result)/MB_DIV)) {
+		printf("Average BW = %f MB/sec\n", ((double)result/MB_DIV));
+	} else if (((long long)(result)/KB_DIV)) {
+		printf("Average BW = %f KB/sec\n", ((double)result/KB_DIV));
+	} else
+		printf("Average BW = %f Bytes/sec\n", ((double)result));
+}
 
 uint64_t getopt_integer(char *optarg)
 {

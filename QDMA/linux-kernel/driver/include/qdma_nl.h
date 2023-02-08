@@ -1,8 +1,8 @@
 /*
  * This file is part of the Xilinx DMA IP Core driver for Linux
  *
- * Copyright (c) 2017-2020,  Xilinx, Inc.
- * All rights reserved.
+ * Copyright (c) 2017-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -24,7 +24,6 @@
  * @brief This file contains the declarations for qdma netlink interfaces
  *
  */
-
 /** physical function name (no more than 15 characters) */
 #define XNL_NAME_PF		"xnl_pf"
 /** virtual function name */
@@ -109,7 +108,7 @@ enum xnl_attr_t {
 	XNL_ATTR_DEV_STAT_STC2H_PKTS2,	/**< number of ST C2H packets */
 
 	XNL_ATTR_DEV_CFG_BAR,		/**< device config bar number */
-	XNL_ATTR_DEV_USR_BAR,		/**< device user bar number */
+	XNL_ATTR_DEV_USR_BAR,		/**< device AXI Master Lite(user bar) number */
 	XNL_ATTR_DEV_QSET_MAX,		/**< max queue sets */
 	XNL_ATTR_DEV_QSET_QBASE,	/**< queue base start */
 
@@ -162,6 +161,7 @@ enum xnl_attr_t {
 	XNL_ATTR_Q_STATE,
 	XNL_ATTR_ERROR,
 	XNL_ATTR_PING_PONG_EN,
+	XNL_ATTR_APERTURE_SZ,
 	XNL_ATTR_DEV_STAT_PING_PONG_LATMIN1,
 	XNL_ATTR_DEV_STAT_PING_PONG_LATMIN2,
 	XNL_ATTR_DEV_STAT_PING_PONG_LATMAX1,
@@ -169,9 +169,12 @@ enum xnl_attr_t {
 	XNL_ATTR_DEV_STAT_PING_PONG_LATAVG1,
 	XNL_ATTR_DEV_STAT_PING_PONG_LATAVG2,
 	XNL_ATTR_DEV,
+	XNL_ATTR_DEBUG_EN,	/** Debug Regs Capability*/
+	XNL_ATTR_DESC_ENGINE_MODE, /** Descriptor Engine Capability */
 #ifdef ERR_DEBUG
 	XNL_ATTR_QPARAM_ERR_INFO,	/**< queue param info */
 #endif
+	XNL_ATTR_NUM_REGS,			/**< number of regs */
 	XNL_ATTR_MAX,
 };
 
@@ -269,6 +272,8 @@ static const char *xnl_attr_str[XNL_ATTR_MAX + 1] = {
 	"ERROR",			/**< XNL_ATTR_ERROR */
 	"PING_PONG_EN",		/**< XNL_PING_PONG_EN */
 	"DEV_ATTR",			/**< XNL_ATTR_DEV */
+	"XNL_ATTR_DEBUG_EN",	/** XNL_ATTR_DEBUG_EN */
+	"XNL_ATTR_DESC_ENGINE_MODE",	/** XNL_ATTR_DESC_ENGINE_MODE */
 #ifdef ERR_DEBUG
 	"QPARAM_ERR_INFO",		/**< queue param info */
 #endif
@@ -311,6 +316,10 @@ enum xnl_op_t {
 	XNL_CMD_GLOBAL_CSR,	/**< get all global csr register values */
 	XNL_CMD_DEV_CAP,	/**< list h/w capabilities , hw and sw version */
 	XNL_CMD_GET_Q_STATE,	/**< get the queue state */
+	XNL_CMD_REG_INFO_READ,  /**< read register info */
+#ifdef TANDEM_BOOT_SUPPORTED
+	XNL_CMD_EN_ST,  	/**< Enable Streaming */
+#endif
 	XNL_CMD_MAX,		/**< max number of XNL commands*/
 };
 
@@ -337,9 +346,17 @@ static const char *xnl_op_str[XNL_CMD_MAX] = {
 	"Q_CMPT",		/** XNL_CMD_Q_CMPT */
 	"Q_RX_PKT",		/** XNL_CMD_Q_RX_PKT */
 	"Q_CMPT_READ",		/** XNL_CMD_Q_CMPT_READ */
-	"INTR_RING_DUMP",	/** XNL_CMD_INTR_RING_DUMP */
 #ifdef ERR_DEBUG
-	"Q_ERR_INDUCE"		/** XNL_CMD_Q_ERR_INDUCE */
+	"Q_ERR_INDUCE",		/** XNL_CMD_Q_ERR_INDUCE */
+#endif
+	"INTR_RING_DUMP",	/** XNL_CMD_INTR_RING_DUMP */
+	"Q_UDD_DUMP",		/** XNL_CMD_Q_UDD */
+	"GLOBAL_CSR",		/** XNL_CMD_GLOBAL_CSR*/
+	"DEV_CAP",			/** XNL_CMD_DEV_CAP */
+	"GET_Q_STATE",		/** XNL_CMD_GET_Q_STATE */
+	"REG_INFO_READ",		/** XNL_CMD_REG_INFO_READ */
+#ifdef TANDEM_BOOT_SUPPORTED
+	"EN_ST"				/** XNL_CMD_EN_ST */
 #endif
 };
 

@@ -1,8 +1,8 @@
 /*
  * This file is part of the Xilinx DMA IP Core driver for Linux
  *
- * Copyright (c) 2017-2020,  Xilinx, Inc.
- * All rights reserved.
+ * Copyright (c) 2017-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -47,7 +47,7 @@ static int dump_qdma_regs(struct xlnx_dma_dev *xdev)
 {
 	int len = 0, dis_len = 0;
 	int rv;
-	char *buf = NULL, tbuff = NULL;
+	char *buf = NULL, *tbuff = NULL;
 	int buflen;
 	char temp_buf[512];
 
@@ -116,12 +116,18 @@ static irqreturn_t user_intr_handler(int irq_index, int irq, void *dev_id)
 {
 	struct xlnx_dma_dev *xdev = dev_id;
 
-	pr_info("User IRQ fired on Funtion#%d: index=%d, vector=%d\n",
+	pr_debug("User IRQ fired on Funtion#%d: index=%d, vector=%d\n",
 		xdev->func_id, irq_index, irq);
 
-	if (xdev->conf.fp_user_isr_handler)
+	if (xdev->conf.fp_user_isr_handler) {
+#ifndef __XRT__
 		xdev->conf.fp_user_isr_handler((unsigned long)xdev,
 						xdev->conf.uld);
+#else
+		xdev->conf.fp_user_isr_handler((unsigned long)xdev,
+						irq_index, xdev->conf.uld);
+#endif
+	}
 
 	return IRQ_HANDLED;
 }
@@ -159,6 +165,7 @@ static void data_intr_aggregate(struct xlnx_dma_dev *xdev, int vidx, int irq,
 	uint32_t qid = 0;
 	uint32_t num_entries_processed = 0;
 
+
 	if (!coal_entry) {
 		pr_err("Failed to locate the coalescing entry for vector = %d\n",
 			vidx);
@@ -191,10 +198,10 @@ static void data_intr_aggregate(struct xlnx_dma_dev *xdev, int vidx, int irq,
 		return;
 	}
 
-
-
 	do {
-		if (xdev->version_info.ip_type == QDMA_VERSAL_HARD_IP) {
+		if ((xdev->version_info.ip_type == QDMA_VERSAL_HARD_IP) &&
+				(xdev->version_info.device_type ==
+				 QDMA_DEVICE_VERSAL_CPM4)) {
 			color = ring_entry->ring_cpm.coal_color;
 			intr_type = ring_entry->ring_cpm.intr_type;
 			qid = ring_entry->ring_cpm.qid;
@@ -218,6 +225,10 @@ static void data_intr_aggregate(struct xlnx_dma_dev *xdev, int vidx, int irq,
 			return;
 		}
 		xdev->prev_descq = descq;
+		pr_debug("IRQ[%d]: IVE[%d], Qid = %d, e_color = %d, c_color = %d, intr_type = %d\n",
+				irq, vidx, qid, coal_entry->color,
+				color, intr_type);
+
 		if (descq->conf.ping_pong_en &&
 			descq->conf.q_type == Q_C2H && descq->conf.st)
 			descq->ping_pong_rx_time = timestamp;
@@ -247,16 +258,17 @@ static void data_intr_aggregate(struct xlnx_dma_dev *xdev, int vidx, int irq,
 
 	if (descq) {
 		queue_intr_cidx_update(descq->xdev,
-				descq->conf.qidx, &coal_entry->intr_cidx_info);
+			descq->conf.qidx, &coal_entry->intr_cidx_info);
 	} else if (num_entries_processed == 0) {
-		pr_warn("No entries processed\n");
+		pr_debug("No entries processed\n");
 		descq = xdev->prev_descq;
 		if (descq) {
-			pr_warn("Doing stale update\n");
+			pr_debug("Doing stale update\n");
 			queue_intr_cidx_update(descq->xdev,
 				descq->conf.qidx, &coal_entry->intr_cidx_info);
 		}
 	}
+
 }
 
 static void data_intr_direct(struct xlnx_dma_dev *xdev, int vidx, int irq,
@@ -592,8 +604,7 @@ int intr_setup(struct xlnx_dma_dev *xdev)
 
 #ifndef MBOX_INTERRUPT_DISABLE
 	/** Dedicate 1 vector for mailbox interrupts */
-	if ((xdev->version_info.device_type == QDMA_DEVICE_SOFT) &&
-	(xdev->version_info.vivado_release >= QDMA_VIVADO_2019_1))
+	if (qdma_mbox_is_irq_availabe(xdev))
 		num_vecs_req++;
 #endif
 
@@ -649,8 +660,7 @@ int intr_setup(struct xlnx_dma_dev *xdev)
 	i = 0; /* This is mandatory, do not delete */
 
 #ifndef MBOX_INTERRUPT_DISABLE
-	if ((xdev->version_info.device_type == QDMA_DEVICE_SOFT) &&
-	(xdev->version_info.vivado_release >= QDMA_VIVADO_2019_1)) {
+	if (qdma_mbox_is_irq_availabe(xdev)) {
 		/* Mail box interrupt */
 		rv = intr_vector_setup(xdev, i, INTR_TYPE_MBOX,
 				mbox_intr_handler);
@@ -939,7 +949,7 @@ void intr_work(struct work_struct *work)
  * @dev_hndl: hndl retured from qdma_device_open()
  * @qhndl: hndl retured from qdma_queue_add()
  */
-void qdma_queue_service(unsigned long dev_hndl, unsigned long id, int budget,
+int qdma_queue_service(unsigned long dev_hndl, unsigned long id, int budget,
 			bool c2h_upd_cmpl)
 {
 	struct xlnx_dma_dev *xdev = (struct xlnx_dma_dev *)dev_hndl;
@@ -948,22 +958,25 @@ void qdma_queue_service(unsigned long dev_hndl, unsigned long id, int budget,
 	/** make sure that the dev_hndl passed is Valid */
 	if (!xdev) {
 		pr_err("dev_hndl is NULL");
-		return;
+		return -EINVAL;
 	}
 
 	if (xdev_check_hndl(__func__, xdev->conf.pdev, dev_hndl) < 0) {
 		pr_err("Invalid dev_hndl passed");
-		return;
+		return -EINVAL;
 	}
 
 	descq = qdma_device_get_descq_by_id(xdev, id, NULL, 0, 0);
 	if (descq)
-		qdma_descq_service_cmpl_update(descq, budget, c2h_upd_cmpl);
+		return qdma_descq_service_cmpl_update(descq,
+					budget, c2h_upd_cmpl);
+
+	return -EINVAL;
 }
 
 static u8 get_intr_vec_index(struct xlnx_dma_dev *xdev, u8 intr_type)
 {
-	u8 i = 0;
+	int i = 0;
 
 	for (i = 0; i < xdev->num_vecs; i++) {
 		if (xdev->dev_intr_info_list[i].intr_vec_map.intr_type ==

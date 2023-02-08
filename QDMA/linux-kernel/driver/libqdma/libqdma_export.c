@@ -1,8 +1,8 @@
 /*
  * This file is part of the Xilinx DMA IP Core driver for Linux
  *
- * Copyright (c) 2017-2020,  Xilinx, Inc.
- * All rights reserved.
+ * Copyright (c) 2017-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -205,7 +205,8 @@ static int qdma_validate_qconfig(struct xlnx_dma_dev *xdev,
 		return -EINVAL;
 	}
 
-	if (xdev->version_info.ip_type == QDMA_VERSAL_HARD_IP) {
+	if (xdev->version_info.ip_type == QDMA_VERSAL_HARD_IP &&
+		xdev->version_info.device_type == QDMA_DEVICE_VERSAL_CPM4) {
 		/* 64B desc size is not supported in 2018.2 release */
 		if ((qconf->cmpl_desc_sz == CMPT_DESC_SZ_64B) ||
 				(qconf->sw_desc_sz == DESC_SZ_64B)) {
@@ -460,7 +461,6 @@ int qdma_device_capabilities_info(unsigned long dev_hndl,
 		struct qdma_dev_attributes *dev_attr)
 {
 	struct xlnx_dma_dev *xdev = (struct xlnx_dma_dev *)dev_hndl;
-	struct qdma_dev_attributes *dev_cap;
 
 	if (!xdev) {
 		pr_err("dev_hndl is NULL");
@@ -477,11 +477,59 @@ int qdma_device_capabilities_info(unsigned long dev_hndl,
 		return -EINVAL;
 	}
 
-	qdma_get_device_attr(xdev, &dev_cap);
-
-	memcpy(dev_attr, dev_cap, sizeof(struct qdma_dev_attributes));
+	memcpy(dev_attr, &(xdev->dev_cap), sizeof(struct qdma_dev_attributes));
 
 	return 0;
+}
+
+/*****************************************************************************/
+/**
+ * qdma_config_reg_info_dump() - dump the detailed field information of register
+ *
+ * @param[in] dev_hndl:	handle returned from qdma_device_open()
+ * @param[in] reg_addr: register address info tobe dumped
+ * @param[in] num_regs: number of registers to be dumped
+ * @param[in] buf:	    buffer containing the o/p
+ * @param[in] buflen:   length of the buffer
+ *
+ * @return:		    length of o/p buffer
+ *
+ *****************************************************************************/
+int qdma_config_reg_info_dump(unsigned long dev_hndl, uint32_t reg_addr,
+				uint32_t num_regs, char *buf, int buflen)
+{
+	struct xlnx_dma_dev *xdev = (struct xlnx_dma_dev *)dev_hndl;
+	int rv;
+
+	/** make sure that input buffer is not empty, else return error */
+	if (!buf || !buflen) {
+		pr_err("invalid argument: buf=%p, buflen=%d\n", buf, buflen);
+		return -EINVAL;
+	}
+
+	/** make sure that the dev_hndl passed is Valid */
+	if (!xdev) {
+		pr_err("dev_hndl is NULL");
+		snprintf(buf, buflen, "dev_hndl is NULL");
+		return -EINVAL;
+	}
+
+	if (xdev_check_hndl(__func__, xdev->conf.pdev, dev_hndl) < 0) {
+		pr_err("Invalid dev_hndl passed");
+		snprintf(buf, buflen, "Invalid dev_hndl passed\n");
+		return -EINVAL;
+	}
+
+	if (xdev->hw.qdma_dump_reg_info == NULL) {
+		pr_err("Err: Feature not supported\n");
+		snprintf(buf, buflen, "Err: Feature not supported\n");
+		return -EPERM;
+	}
+
+	rv = xdev->hw.qdma_dump_reg_info((void *)dev_hndl, reg_addr,
+			num_regs, buf, buflen);
+	return rv;
+
 }
 
 #ifndef __QDMA_VF__
@@ -1083,6 +1131,8 @@ int qdma_queue_config(unsigned long dev_hndl, unsigned long qid,
  * qdma_queue_list() - display all configured queues in a string buffer
  *
  * @param[in]	dev_hndl:	dev_hndl returned from qdma_device_open()
+ * @param[in]	qidx:		Queue index
+ * @param[in]	num_q:		Number of Queues to list
  * @param[in]	buflen:		length of the input buffer
  * @param[out]	buf:		message buffer
  *
@@ -1090,7 +1140,8 @@ int qdma_queue_config(unsigned long dev_hndl, unsigned long qid,
  *	otherwise 0
  * @return	<0: error
  *****************************************************************************/
-int qdma_queue_list(unsigned long dev_hndl, char *buf, int buflen)
+int qdma_queue_list(unsigned long dev_hndl, int qidx, int num_q, char *buf,
+			int buflen)
 {
 	struct xlnx_dma_dev *xdev = (struct xlnx_dma_dev *)dev_hndl;
 	struct qdma_dev *qdev;
@@ -1154,7 +1205,8 @@ int qdma_queue_list(unsigned long dev_hndl, char *buf, int buflen)
 	 */
 	if (h2c_qcnt) {
 		descq = qdev->h2c_descq;
-		for (i = 0; i < h2c_qcnt; i++, descq++) {
+		descq =  descq + qidx;
+		for (i = qidx; i < (qidx + num_q); i++, descq++) {
 			lock_descq(descq);
 			if (descq->q_state != Q_STATE_DISABLED)
 				cur +=
@@ -1168,7 +1220,8 @@ int qdma_queue_list(unsigned long dev_hndl, char *buf, int buflen)
 
 	if (c2h_qcnt) {
 		descq = qdev->c2h_descq;
-		for (i = 0; i < c2h_qcnt; i++, descq++) {
+		descq =  descq + qidx;
+		for (i = qidx; i < (qidx + num_q); i++, descq++) {
 			lock_descq(descq);
 			if (descq->q_state != Q_STATE_DISABLED)
 				cur +=
@@ -1182,7 +1235,8 @@ int qdma_queue_list(unsigned long dev_hndl, char *buf, int buflen)
 
 	if (cmpt_qcnt) {
 		descq = qdev->cmpt_descq;
-		for (i = 0; i < cmpt_qcnt; i++, descq++) {
+		descq =  descq + qidx;
+		for (i = qidx; i < (qidx + num_q); i++, descq++) {
 			lock_descq(descq);
 			if (descq->q_state != Q_STATE_DISABLED)
 				cur +=
@@ -1433,7 +1487,9 @@ int qdma_queue_add(unsigned long dev_hndl, struct qdma_queue_conf *qconf,
 	qcnt = qdma_get_device_active_queue_count(xdev->dma_device_index,
 			xdev->func_id, qconf->q_type);
 #else
+	spin_unlock(&qdev->lock);
 	qdma_dev_get_active_qcnt(xdev, &h2c_qcnt, &c2h_qcnt, &cmpt_qcnt);
+	spin_lock(&qdev->lock);
 	if (qconf->q_type == Q_H2C)
 		qcnt = h2c_qcnt;
 	else if (qconf->q_type == Q_C2H)
@@ -1691,6 +1747,45 @@ int qdma_queue_start(unsigned long dev_hndl, unsigned long id,
 		unlock_descq(descq);
 		return -EINVAL;
 	}
+
+	if ((xdev->version_info.ip_type == EQDMA_SOFT_IP) &&
+		(xdev->version_info.vivado_release >= QDMA_VIVADO_2020_2)) {
+
+		if (xdev->dev_cap.desc_eng_mode
+			== QDMA_DESC_ENG_BYPASS_ONLY) {
+			pr_err("Err: Bypass Only Design is not supported\n");
+			snprintf(buf, buflen,
+				"%s Bypass Only Design is not supported\n",
+				descq->conf.name);
+			unlock_descq(descq);
+			return -EINVAL;
+		}
+
+		if (descq->conf.desc_bypass) {
+			if (xdev->dev_cap.desc_eng_mode
+				== QDMA_DESC_ENG_INTERNAL_ONLY) {
+				pr_err("Err: Bypass mode not supported in Internal Mode only design\n");
+				snprintf(buf, buflen,
+					"%s  Bypass mode not supported in Internal Mode only design\n",
+					descq->conf.name);
+				unlock_descq(descq);
+				return -EINVAL;
+			}
+		}
+	}
+
+
+	if ((descq->conf.aperture_size != 0) &&
+			((descq->conf.aperture_size &
+			  (descq->conf.aperture_size - 1)))) {
+		pr_err("Err: %s Power of 2 aperture size supported\n",
+			descq->conf.name);
+		snprintf(buf, buflen,
+			"Err:%s Power of 2 aperture size supported\n",
+			descq->conf.name);
+		unlock_descq(descq);
+		return -ERANGE;
+	}
 	unlock_descq(descq);
 	/** complete the queue configuration*/
 	rv = qdma_descq_config_complete(descq);
@@ -1904,7 +1999,7 @@ int qdma_queue_stop(unsigned long dev_hndl, unsigned long id, char *buf,
 		cb->done = 1;
 		cb->status = -ENXIO;
 		if (req->fp_done) {
-			list_del(&cb->list);
+			qdma_work_queue_del(descq, cb);
 			req->fp_done(req, 0, -ENXIO);
 		} else
 			qdma_waitq_wakeup(&cb->wq);
@@ -2138,14 +2233,14 @@ handle_truncation:
   * @return  0: success
   * @return  <0: error
   *****************************************************************************/
-int qdma_software_version_info(char *software_version)
+int qdma_software_version_info(char *software_version, int length)
 {
 	if (!software_version) {
 		pr_err("Invalid input software_version:%p", software_version);
 		return -EINVAL;
 	}
 
-	sprintf(software_version, "%s", LIBQDMA_VERSION_STR);
+	snprintf(software_version, length, "%s", LIBQDMA_VERSION_STR);
 
 	return 0;
 }
@@ -2215,7 +2310,7 @@ void sgl_unmap(struct pci_dev *pdev, struct qdma_sw_sg *sg, unsigned int sgcnt,
 		if (!sg->pg)
 			break;
 		if (sg->dma_addr) {
-			pci_unmap_page(pdev, sg->dma_addr - sg->offset,
+			dma_unmap_page(&pdev->dev, sg->dma_addr - sg->offset,
 							PAGE_SIZE, dir);
 			sg->dma_addr = 0UL;
 		}
@@ -2247,8 +2342,9 @@ int sgl_map(struct pci_dev *pdev, struct qdma_sw_sg *sgl, unsigned int sgcnt,
 	 */
 	for (i = 0; i < sgcnt; i++, sg++) {
 		/* !! TODO  page size !! */
-		sg->dma_addr = pci_map_page(pdev, sg->pg, 0, PAGE_SIZE, dir);
-		if (unlikely(pci_dma_mapping_error(pdev, sg->dma_addr))) {
+		sg->dma_addr = dma_map_page(&pdev->dev, sg->pg, 0, PAGE_SIZE,
+				dir);
+		if (unlikely(dma_mapping_error(&pdev->dev, sg->dma_addr))) {
 			pr_err("map sgl failed, sg %d, %u.\n", i, sg->len);
 			if (i)
 				sgl_unmap(pdev, sgl, i, dir);
@@ -2368,8 +2464,7 @@ ssize_t qdma_request_submit(unsigned long dev_hndl, unsigned long id,
 		rv = -EINVAL;
 		goto unmap_sgl;
 	}
-	list_add_tail(&cb->list, &descq->work_list);
-	descq->pend_req_desc += ((req->count + PAGE_SIZE - 1) >> PAGE_SHIFT);
+	qdma_work_queue_add(descq, cb);
 	unlock_descq(descq);
 
 	pr_debug("%s: cb 0x%p submitted.\n", descq->conf.name, cb);
@@ -2526,6 +2621,75 @@ ssize_t qdma_batch_request_submit(unsigned long dev_hndl, unsigned long id,
 	return 0;
 }
 
+#ifdef TANDEM_BOOT_SUPPORTED
+/*****************************************************************************/
+/**
+ * qdma_init_st_ctxt()       initialize the QDMA ST context
+ *
+ * @param dev_hndl	dev_hndl retunred from qdma_device_open()
+ * @param buflen	input buffer length
+ * @param buf		error message buffer, can be NULL/0 (i.e., optional
+ *
+ * @return	0:	success
+ * @return	<0:	error
+ *****************************************************************************/
+int qdma_init_st_ctxt(unsigned long dev_hndl, char *buf, int buflen)
+{
+	struct xlnx_dma_dev *xdev = (struct xlnx_dma_dev *)dev_hndl;
+	int rv;
+
+	/** make sure that input buffer is not empty, else return error */
+	if (!buf || !buflen) {
+		pr_err("invalid argument: buf=%p, buflen=%d\n", buf, buflen);
+		return -EINVAL;
+	}
+
+	/** make sure that the dev_hndl passed is Valid */
+	if (!xdev) {
+		pr_err("dev_hndl is NULL");
+		snprintf(buf, buflen, "dev_hndl is NULL");
+		return -EINVAL;
+	}
+
+	if (xdev_check_hndl(__func__, xdev->conf.pdev, dev_hndl) < 0) {
+		pr_err("Invalid dev_hndl passed");
+		snprintf(buf, buflen, "Invalid dev_hndl passed\n");
+		return -EINVAL;
+	}
+
+	if ((xdev->version_info.ip_type == QDMA_VERSAL_HARD_IP) &&
+		(xdev->version_info.device_type == QDMA_DEVICE_VERSAL_CPM5)) {
+		if (xdev->hw.qdma_init_st_ctxt == NULL) {
+			pr_err("Err: Feature not supported\n");
+			snprintf(buf, buflen, "Err: Feature not supported\n");
+			return -EPERM;
+		}
+
+		rv = xdev->hw.qdma_init_st_ctxt((void *)dev_hndl);
+
+		if (rv == QDMA_SUCCESS) {
+			snprintf(buf, buflen,
+			"qdma%05x : Steaming Enabled successfully\n",
+			xdev->conf.bdf);
+			pr_info("Steaming Enabled successfully\n");
+		} else {
+			snprintf(buf, buflen,
+			"qdma%05x : Failed to Enable Steaming\n",
+			xdev->conf.bdf);
+			pr_info("Failed to Enable Steaming\n");
+			return -EINVAL;
+		}
+	} else {
+		snprintf(buf, buflen,
+			"qdma%05x : Steaming Enabled during Initialization\n",
+			xdev->conf.bdf);
+		pr_info("Steaming Enabled during Initialization\n");
+	}
+
+	return rv;
+}
+#endif
+
 /*****************************************************************************/
 /**
  * libqdma_init()       initialize the QDMA core library
@@ -2545,7 +2709,7 @@ int libqdma_init(unsigned int num_threads, void *debugfs_root)
 	 *  If not, return error
 	 */
 	if (sizeof(struct qdma_sgt_req_cb) > QDMA_REQ_OPAQUE_SIZE) {
-		pr_err("dma req. opaque data size too big %lu > %d.\n",
+		pr_err("dma req. opaque data size too big %lu > %lu.\n",
 			sizeof(struct qdma_sgt_req_cb), QDMA_REQ_OPAQUE_SIZE);
 		return -1;
 	}

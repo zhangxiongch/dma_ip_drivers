@@ -1,8 +1,8 @@
 /*
  * This file is part of the Xilinx DMA IP Core driver for Linux
  *
- * Copyright (c) 2017-2020,  Xilinx, Inc.
- * All rights reserved.
+ * Copyright (c) 2017-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -133,7 +133,9 @@ static int qdma_req_completed(struct qdma_request *req,
 	if (caio->cmpl_count == caio->req_count) {
 		res = caio->cmpl_count - caio->err_cnt;
 		res2 = caio->res2;
-#if KERNEL_VERSION(4, 1, 0) <= LINUX_VERSION_CODE
+#if KERNEL_VERSION(5, 16, 0) <= LINUX_VERSION_CODE
+		caio->iocb->ki_complete(caio->iocb, res);
+#elif KERNEL_VERSION(4, 1, 0) <= LINUX_VERSION_CODE
 		caio->iocb->ki_complete(caio->iocb, res, res2);
 #else
 		aio_complete(caio->iocb, res, res2);
@@ -241,7 +243,7 @@ static void unmap_user_buf(struct qdma_io_cb *iocb, bool write)
 	for (i = 0; i < iocb->pages_nr; i++) {
 		if (iocb->pages[i]) {
 			if (!write)
-				set_page_dirty_lock(iocb->pages[i]);
+				set_page_dirty(iocb->pages[i]);
 			put_page(iocb->pages[i]);
 		} else
 			break;
@@ -436,6 +438,7 @@ static ssize_t cdev_aio_write(struct kiocb *iocb, const struct iovec *io,
 		pr_err("failed to allocate qiocb");
 		return -ENOMEM;
 	}
+
 	caio->reqv = (struct qdma_request **)(caio->qiocb + count);
 	for (i = 0; i < count; i++) {
 		caio->qiocb[i].private = caio;
@@ -452,6 +455,7 @@ static ssize_t cdev_aio_write(struct kiocb *iocb, const struct iovec *io,
 		caio->reqv[i]->dma_mapped = false;
 		caio->reqv[i]->udd_len = 0;
 		caio->reqv[i]->ep_addr = (u64)pos;
+		pos += io[i].iov_len;
 		caio->reqv[i]->no_memcpy = xcdev->no_memcpy ? 1 : 0;
 		caio->reqv[i]->count = io->iov_len;
 		caio->reqv[i]->timeout_ms = 10 * 1000;	/* 10 seconds */
@@ -509,6 +513,7 @@ static ssize_t cdev_aio_read(struct kiocb *iocb, const struct iovec *io,
 		pr_err("failed to allocate qiocb");
 		return -ENOMEM;
 	}
+
 	caio->reqv = (struct qdma_request **)(caio->qiocb + count);
 	for (i = 0; i < count; i++) {
 		caio->qiocb[i].private = caio;
@@ -525,6 +530,7 @@ static ssize_t cdev_aio_read(struct kiocb *iocb, const struct iovec *io,
 		caio->reqv[i]->dma_mapped = false;
 		caio->reqv[i]->udd_len = 0;
 		caio->reqv[i]->ep_addr = (u64)pos;
+		pos += io[i].iov_len;
 		caio->reqv[i]->no_memcpy = xcdev->no_memcpy ? 1 : 0;
 		caio->reqv[i]->count = io->iov_len;
 		caio->reqv[i]->timeout_ms = 10 * 1000;	/* 10 seconds */
@@ -616,7 +622,8 @@ int qdma_cdev_create(struct qdma_cdev_cb *xcb, struct pci_dev *pdev,
 		pr_err("%s failed to allocate cdev %lu.\n",
 		       qconf->name, sizeof(struct qdma_cdev));
 		if (ebuf && ebuflen) {
-			rv = sprintf(ebuf, "%s failed to allocate cdev %lu.\n",
+			rv = snprintf(ebuf, ebuflen,
+				"%s failed to allocate cdev %lu.\n",
 				qconf->name, sizeof(struct qdma_cdev));
 			ebuf[rv] = '\0';
 
@@ -636,7 +643,7 @@ int qdma_cdev_create(struct qdma_cdev_cb *xcb, struct pci_dev *pdev,
 	if (xcdev->minor >= xcb->cdev_minor_cnt) {
 		pr_err("%s: no char dev. left.\n", qconf->name);
 		if (ebuf && ebuflen) {
-			rv = sprintf(ebuf, "%s cdev no cdev left.\n",
+			rv = snprintf(ebuf, ebuflen, "%s cdev no cdev left.\n",
 					qconf->name);
 			ebuf[rv] = '\0';
 		}
@@ -652,7 +659,8 @@ int qdma_cdev_create(struct qdma_cdev_cb *xcb, struct pci_dev *pdev,
 	if (rv < 0) {
 		pr_err("cdev_add failed %d, %s.\n", rv, xcdev->name);
 		if (ebuf && ebuflen) {
-			int l = sprintf(ebuf, "%s cdev add failed %d.\n",
+			int l = snprintf(ebuf, ebuflen,
+					"%s cdev add failed %d.\n",
 					qconf->name, rv);
 			ebuf[l] = '\0';
 		}
@@ -668,7 +676,7 @@ int qdma_cdev_create(struct qdma_cdev_cb *xcb, struct pci_dev *pdev,
 			pr_err("%s device_create failed %d.\n",
 				xcdev->name, rv);
 			if (ebuf && ebuflen) {
-				int l = sprintf(ebuf,
+				int l = snprintf(ebuf, ebuflen,
 						"%s device_create failed %d.\n",
 						qconf->name, rv);
 				ebuf[l] = '\0';

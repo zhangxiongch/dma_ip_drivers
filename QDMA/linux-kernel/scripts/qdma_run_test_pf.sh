@@ -1,3 +1,23 @@
+#/*
+# * This file is part of the Xilinx DMA IP Core driver for Linux
+# *
+# * Copyright (c) 2017-2022, Xilinx, Inc. All rights reserved.
+# * Copyright (c) 2022-2023, Advanced Micro Devices, Inc. All rights reserved.
+# *
+# * This source code is free software; you can redistribute it and/or modify it
+# * under the terms and conditions of the GNU General Public License,
+# * version 2, as published by the Free Software Foundation.
+# *
+# * This program is distributed in the hope that it will be useful, but WITHOUT
+# * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+# * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+# * more details.
+# *
+# * The full GNU General Public License is included in this distribution in
+# * the file called "COPYING".
+# */
+
+
 #!/bin/bash
 #
 # Simple run script to test QDMA in AXI-MM and AXI-St mode.
@@ -289,7 +309,7 @@ function cleanup_queue() {
 }
 
 
-# Find user bar
+# Find AXI Master Lite bar
 function get_user_bar () {
         local pf_bdf=$1
 	tmp=`dma-ctl qdma$pf_bdf reg read bar 0 0x10C | grep "0x10c" | cut -d '=' -f2 | cut -d 'x' -f2 | cut -d '.' -f1`

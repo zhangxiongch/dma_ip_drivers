@@ -2,8 +2,8 @@
  * This file is part of the QDMA userspace application
  * to enable the user to execute the QDMA functionality
  *
- * Copyright (c) 2018-2020,  Xilinx, Inc.
- * All rights reserved.
+ * Copyright (c) 2018-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022-2023, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is licensed under BSD-style license (found in the
  * LICENSE file in the root directory of this source tree)
@@ -32,6 +32,9 @@
 #define DEVICE_NAME_DEFAULT "/dev/qdma01000-MM-0"
 #define SIZE_DEFAULT (32)
 #define COUNT_DEFAULT (1)
+
+
+
 
 static struct option const long_opts[] = {
 	{"device", required_argument, NULL, 'd'},
@@ -81,7 +84,6 @@ static void usage(const char *name)
 	i++;
 	fprintf(stdout, "  -%c (--%s) verbose output\n",
 		long_opts[i].val, long_opts[i].name);
-	i++;
 }
 
 int main(int argc, char *argv[])
@@ -155,9 +157,9 @@ static int test_dma(char *devname, uint64_t addr, uint64_t size,
 	struct timespec ts_start, ts_end;
 	int out_fd = -1;
 	int fpga_fd = open(devname, O_RDWR | O_NONBLOCK);
-	long total_time = 0;
-	float result;
-	float avg_time = 0;
+	double total_time = 0;
+	double result;
+	double avg_time = 0;
 
 	if (fpga_fd < 0) {
                 fprintf(stderr, "unable to open device %s, %d.\n",
@@ -200,11 +202,11 @@ static int test_dma(char *devname, uint64_t addr, uint64_t size,
 
 		/* subtract the start time from the end time */
 		timespec_sub(&ts_end, &ts_start);
-		total_time += ts_end.tv_nsec;
+		total_time += (ts_end.tv_sec + ((double)ts_end.tv_nsec/NSEC_DIV));
 		/* a bit less accurate but side-effects are accounted for */
 		if (verbose)
 		fprintf(stdout,
-			"#%lu: CLOCK_MONOTONIC %ld.%09ld sec. read %ld bytes\n",
+			"#%lu: CLOCK_MONOTONIC %ld.%09ld sec. read %lu bytes\n",
 			i, ts_end.tv_sec, ts_end.tv_nsec, size);
 
 		/* file argument given? */
@@ -215,12 +217,13 @@ static int test_dma(char *devname, uint64_t addr, uint64_t size,
 				goto out;
 		}
 	}
-	avg_time = (float)total_time/(float)count;
-	result = ((float)size)*1000/avg_time;
+	avg_time = (double)total_time/(double)count;
+	result = ((double)size)/avg_time;
 	if (verbose)
-	printf("** Avg time device %s, total time %ld nsec, avg_time = %f, size = %lu, BW = %f \n",
+	printf("** Avg time device %s, total time %f nsec, avg_time = %f, size = %lu, BW = %f bytes/sec\n",
 		devname, total_time, avg_time, size, result);
-	printf("** Average BW = %lu, %f\n", size, result);
+	dump_throughput_result(size, result);
+
 	rc = 0;
 
 out:

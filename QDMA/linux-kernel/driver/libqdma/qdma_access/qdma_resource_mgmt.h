@@ -1,5 +1,6 @@
 /*
- * Copyright(c) 2019-2020 Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2019-2022, Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022, Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is free software; you can redistribute it and/or modify it
  * under the terms and conditions of the GNU General Public License,
@@ -14,8 +15,8 @@
  * the file called "COPYING".
  */
 
-#ifndef QDMA_RESOURCE_MGMT_H_
-#define QDMA_RESOURCE_MGMT_H_
+#ifndef __QDMA_RESOURCE_MGMT_H_
+#define __QDMA_RESOURCE_MGMT_H_
 
 #ifdef __cplusplus
 extern "C" {
@@ -27,6 +28,7 @@ extern "C" {
  * Header file *qdma_resource_mgmt.h* defines data structures and function
  * signatures exported for QDMA queue management.
  */
+
 #include "qdma_platform_env.h"
 #include "qdma_access_export.h"
 
@@ -209,4 +211,4 @@ int qdma_get_device_active_queue_count(uint32_t dma_device_index,
 }
 #endif
 
-#endif /* LIBQDMA_QDMA_RESOURCE_MGMT_H_ */
+#endif /* __QDMA_RESOURCE_MGMT_H_ */

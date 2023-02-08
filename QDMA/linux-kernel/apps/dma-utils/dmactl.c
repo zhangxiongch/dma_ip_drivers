@@ -2,8 +2,8 @@
  * This file is part of the QDMA userspace application
  * to enable the user to execute the QDMA functionality
  *
- * Copyright (c) 2019-2020,  Xilinx, Inc.
- * All rights reserved.
+ * Copyright (c) 2019-2022,  Xilinx, Inc. All rights reserved.
+ * Copyright (c) 2022-2023,  Advanced Micro Devices, Inc. All rights reserved.
  *
  * This source code is licensed under BSD-style license (found in the
  * LICENSE file in the root directory of this source tree)
@@ -175,12 +175,11 @@ static int xnl_connect(struct xnl_cb *cb, int vf, void (*log_err)(const char *))
 	cb->family = CTRL_ATTR_FAMILY_NAME;
 
 	if (vf) {
-        	attr->nla_len = strlen(XNL_NAME_VF) + 1 + NLA_HDRLEN;
-        	strcpy((char *)(attr + 1), XNL_NAME_VF);
-
+		attr->nla_len = strlen(XNL_NAME_VF) + 1 + NLA_HDRLEN;
+		memcpy((char *)(attr + 1), XNL_NAME_VF, sizeof(XNL_NAME_VF) - 1);
 	} else {
-        	attr->nla_len = strlen(XNL_NAME_PF) + 1 + NLA_HDRLEN;
-        	strcpy((char *)(attr + 1), XNL_NAME_PF);
+		attr->nla_len = strlen(XNL_NAME_PF) + 1 + NLA_HDRLEN;
+		memcpy((char *)(attr + 1), XNL_NAME_PF, sizeof(XNL_NAME_PF) - 1);
 	}
         hdr->n.nlmsg_len += NLMSG_ALIGN(attr->nla_len);
 
@@ -302,16 +301,15 @@ static int get_cmd_resp_buf_len(enum xnl_op_t op, struct xcmd_info *xcmd)
         case XNL_CMD_Q_STOP:
         case XNL_CMD_Q_DEL:
         case XNL_CMD_GLOBAL_CSR:
-        	return buf_len;
+            return buf_len;
         case XNL_CMD_Q_ADD:
         case XNL_CMD_Q_DUMP:
-        case XNL_CMD_Q_CMPT_READ:
-        	break;
         case XNL_CMD_Q_LIST:
-        	buf_len = XNL_RESP_BUFLEN_MAX * 10;
-        	break;
+        case XNL_CMD_Q_CMPT_READ:
+            break;
         case XNL_CMD_REG_DUMP:
-        	buf_len = XNL_RESP_BUFLEN_MAX * 6;
+		case XNL_CMD_REG_INFO_READ:
+            buf_len = XNL_RESP_BUFLEN_MAX * 6;
         break;
 		case XNL_CMD_DEV_STAT:
 			buf_len = XNL_RESP_BUFLEN_MAX;
@@ -374,6 +372,10 @@ static void xnl_msg_add_extra_config_attrs(struct xnl_hdr *hdr,
 		xnl_msg_add_int_attr(hdr,  XNL_ATTR_PING_PONG_EN,
 							 xcmd->req.qparm.ping_pong_en);
 	}
+	if (xcmd->req.qparm.sflags & (1 << QPARM_KEYHOLE_EN)) {
+		xnl_msg_add_int_attr(hdr,  XNL_ATTR_APERTURE_SZ,
+							 xcmd->req.qparm.aperture_sz);
+	}
 }
 
 static int xnl_parse_response(struct xnl_cb *cb, struct xnl_hdr *hdr,
@@ -407,9 +409,11 @@ static int xnl_send_cmd(struct xnl_cb *cb, struct xnl_hdr *hdr,
         case XNL_CMD_DEV_INFO:
         case XNL_CMD_DEV_STAT:
         case XNL_CMD_DEV_STAT_CLEAR:
-        case XNL_CMD_Q_LIST:
 		/* no parameter */
 		break;
+        case XNL_CMD_Q_LIST:
+		xnl_msg_add_int_attr(hdr, XNL_ATTR_QIDX, xcmd->req.qparm.idx);
+		xnl_msg_add_int_attr(hdr, XNL_ATTR_NUM_Q, xcmd->req.qparm.num_q);
         case XNL_CMD_Q_ADD:
 		xnl_msg_add_int_attr(hdr, XNL_ATTR_QIDX, xcmd->req.qparm.idx);
 		xnl_msg_add_int_attr(hdr, XNL_ATTR_NUM_Q, xcmd->req.qparm.num_q);
@@ -471,6 +475,16 @@ static int xnl_send_cmd(struct xnl_cb *cb, struct xnl_hdr *hdr,
 							 xcmd->req.reg.reg);
 		xnl_msg_add_int_attr(hdr, XNL_ATTR_REG_VAL,
 							 xcmd->req.reg.val);
+		break;
+		case XNL_CMD_REG_INFO_READ:
+		xnl_msg_add_int_attr(hdr, XNL_ATTR_REG_BAR_NUM,
+								 xcmd->req.reg.bar);
+		xnl_msg_add_int_attr(hdr, XNL_ATTR_REG_ADDR,
+							 xcmd->req.reg.reg);
+		xnl_msg_add_int_attr(hdr, XNL_ATTR_NUM_REGS,
+							 xcmd->req.reg.range_end);
+		xnl_msg_add_int_attr(hdr, XNL_ATTR_RSP_BUF_LEN,
+				dlen);
 		break;
         case XNL_CMD_REG_DUMP:
 		xnl_msg_add_int_attr(hdr, XNL_ATTR_RSP_BUF_LEN,
@@ -566,6 +580,8 @@ void xnl_parse_dev_cap_attrs(struct xnl_hdr *hdr, uint32_t *attrs,
 	xcmd->resp.cap.num_qs = attrs[XNL_ATTR_DEV_NUMQS];
 	xcmd->resp.cap.flr_present = attrs[XNL_ATTR_DEV_FLR_PRESENT];
 	xcmd->resp.cap.mm_en = attrs[XNL_ATTR_DEV_MM_ENABLE];
+	xcmd->resp.cap.debug_mode = attrs[XNL_ATTR_DEBUG_EN];
+	xcmd->resp.cap.desc_eng_mode = attrs[XNL_ATTR_DESC_ENGINE_MODE];
 	xcmd->resp.cap.mm_cmpt_en =
 			attrs[XNL_ATTR_DEV_MM_CMPT_ENABLE];
 	xcmd->resp.cap.st_en = attrs[XNL_ATTR_DEV_ST_ENABLE];
@@ -845,8 +861,24 @@ int qdma_reg_write(struct xcmd_info *cmd)
 	return proc_reg_cmd(cmd);
 }
 
+int qdma_reg_info_read(struct xcmd_info *cmd)
+{
+	return proc_reg_cmd(cmd);
+}
+
 int qdma_reg_dump(struct xcmd_info *cmd)
 {
 	return proc_reg_cmd(cmd);
 }
 
+#ifdef TANDEM_BOOT_SUPPORTED
+int qdma_en_st(struct xcmd_info *cmd)
+{
+	uint32_t attrs[XNL_ATTR_MAX] = {0};
+	int rv;
+
+	rv = xnl_common_msg_send(cmd, attrs);
+	if (rv < 0)
+		return rv;
+}
+#endif
