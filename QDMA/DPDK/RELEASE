@@ -1,4 +1,4 @@
-RELEASE: 2023.1.0
+RELEASE: 2023.2.1
 =================
 
 This release is based on DPDK v20.11, v21.11 and v22.11 and
@@ -9,6 +9,7 @@ This release is validated for
 	- On VCU1525 for QDMA4.0 2020.2 example design
 	- On VCU1525 for QDMA3.1 2019.2 example design
 	- On XCVP1202 for CPM5 2022.1 example design
+	- On XCVC1902 for CPM4 2022.1 example design
 
 This release includes patch files for dpdk-pktgen v20.12.0 and v22.04.1 that extends
 dpdk-pktgen application to handle packets with packet sizes more than 1518 bytes
@@ -117,17 +118,37 @@ CPM5
 - Enabled 128 bit SIMD vectorization for Intel and AMD platforms by default for qdma Receive and Transmit APIs
 - Added IO memory barriers for H2C/C2H producer index and completion ring consumer index updates
 
+2023.1.1 Updates
+----------------
+- Optimized the driver code and HW register settings for performance improvements
+
+2023.1.2 Updates
+----------------
+- Optimized dpdk PMD and HW register settings for CPM5 performance improvements
+
+2023.2.0 Updates
+----------------
+- Added driver support for CPM4 design.
+- Added support for Tx and Rx queue statistics to enhance debugging capabilities
+- Added support for latency measurements in Tx and Rx data path to enhance debugging capabilities
+
+2023.2.1 Updates
+----------------
+- Added support for latency measurements in Tx and Rx data path for VF
+
 KNOWN ISSUE:
 ============
-- CPM5:
-	- Performance optimizations are not finalized, Performance report with optimizations will be available in next patch release.
+- CPM4:
+	- HW pdi limitation
+		- VF functionality with vfio-pci on host is not verified
+		- VF functionality on VM is not verified
+		- Forwarding performance numbers are not reaching 100Gbps and capping at 98.8Gbps
 
-- QDMA5.0:
-	- Performance optimizations are not finalized, Performance report with optimizations will be available in next patch release.
+- CPM5:
+	- Smaller packet forwarding performance optimizations are in progress and report will be updated in subsequent releases
 
 - All Designs
 	- Function Level Reset(FLR) of PF device when VFs are attached to this PF results in mailbox communication failure
-	- DPDK C2H and Forwarding performance values for 8 queue is lesser compared to 4 queue case for both PF and VF.
 
 
 DRIVER LIMITATIONS:
@@ -138,7 +159,6 @@ DRIVER LIMITATIONS:
 - All Designs
 	- Big endian systems are not supported
 	- For optimal QDMA streaming performance, packet buffers of the descriptor ring should be aligned to at least 256 bytes.
-	- Current 2023.1.0 driver which is supporting DPDK 22.11/21.11 is not fully verified for stress, multicard, tandem boot and interop use cases. These will be verified and confirmed in next patch release.
 
 
 /*-

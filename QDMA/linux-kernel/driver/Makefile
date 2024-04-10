@@ -125,6 +125,11 @@ ifeq ($(EQDMA_CPM5_VF_GT_256Q_SUPPORTED),1)
   export EXTRA_FLAGS
 endif
 
+ifeq ($(EQDMA_CPM5_10BIT_TAG_ENABLE),1)
+  EXTRA_FLAGS += -DEQDMA_CPM5_10BIT_TAG_ENABLE
+  export EXTRA_FLAGS
+endif
+
 # Don't allow ARCH to overwrite the modified variable when passed to
 # the sub-makes.
 MAKEOVERRIDES := $(filter-out ARCH=%,$(MAKEOVERRIDES))
@@ -234,7 +239,7 @@ clean:
 	done;
 	@-/bin/rm -f *.symvers eval.mak 2>/dev/null;
 	@-/bin/rm -rf $(shell pwd)/libqdma/qdma_access/*.o $(shell pwd)/libqdma/qdma_access/.*.o.* $(shell pwd)/libqdma/qdma_access/.*.cmd $(shell pwd)/libqdma/qdma_access/.*.o.cmd
-	@-/bin/rm -f $(shell pwd)/src/libqdma
+	@-/bin/rm -rf $(shell pwd)/src/libqdma
 
 .PHONY: install-mods
 install-mods:
